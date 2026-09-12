@@ -6,9 +6,14 @@ Optional plugins for BoltWorks Studio. Install only what you want; plugins are n
 
 | Plugin | Status | Package |
 | --- | --- | --- |
+| [Scene Rendering](plugins/scene-rendering/index.html) | Lighting and reversible rundown preview, version 1.2.0 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/scene-rendering/plugin.bwsplugin) |
 | [Image to Mesh](plugins/image-to-mesh/index.html) | Reconstruction development preview, version 1.1.0; requires BWS 50.0.13 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/image-to-mesh/plugin.bwsplugin) |
 | [Roblox Exporter](plugins/roblox-exporter/index.html) | Exporter preview, version 1.1.0 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/roblox-exporter/plugin.bwsplugin) |
 | [Fireplace](plugins/fireplace/README.md) | Experimental scene viewer, version 0.1.0 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/fireplace/plugin.bwsplugin) |
+
+## Scene Rendering preview
+
+[Scene Rendering 1.2.0](plugins/scene-rendering/index.html) requires BWS 50.0.14 or later. Model transfer, rundown preview and reset were checked in the browser on a 3,101-part house. Fire placement and damaged-scene export are not included yet.
 
 ## Roblox Exporter preview
 

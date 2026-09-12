@@ -1,0 +1,18 @@
+{
+  "kind": "boltworks-plugin",
+  "manifestVersion": 1,
+  "id": "scene-rendering",
+  "name": "Scene Rendering",
+  "version": "1.2.0",
+  "description": "Optional lighting workspace for a static model copy. Adjust main and mirror lamps, position, aim, strength and cone angle; show guides and view fullscreen. Keeps editor lighting unchanged. Base colors and named textures are supported; animated rigs and custom shader materials are not transferred. Select parts and preview reversible weathering, loosened pieces and partial collapse. Reset restores the received copy. Fire placement and damage export are not included yet.",
+  "runtime": "sandbox-html",
+  "entry": "main.html",
+  "apiVersion": 2,
+  "enabled": false,
+  "dependencies": [],
+  "contributes": {
+    "toolbar": "scenes",
+    "modelSnapshot": true,
+    "fullscreen": true
+  }
+}

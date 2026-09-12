@@ -1,0 +1,23 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scene Rendering</title><style>:root{font:14px/1.5 "Segoe UI",sans-serif;color:#dce7e8;background:#142125;color-scheme:dark}body{margin:20px}h1{font-size:26px}.compact-row,.toggle-grid{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}input,button,select{font:inherit;color:inherit;background:#263a40;border:1px solid #54727a;border-radius:5px;padding:7px}input[type=number]{width:80px}button{cursor:pointer}canvas{display:block;width:100%;height:440px;background:#101a20;border-radius:8px}canvas:fullscreen{width:100vw;height:100vh}#status{color:#a6d6c9}.damage-panel{margin:20px 0;padding:18px;border:1px solid #3c575d;border-radius:8px;background:#192c31}.damage-panel h2{margin-top:0;font-size:19px}#damageParts{display:block;width:100%;margin:12px 0;min-height:125px}#partSearch{max-width:100%;box-sizing:border-box}.condition{display:block;font-weight:600}.condition output{float:right}.condition input{display:block;width:100%;box-sizing:border-box;padding:0;accent-color:#60d9c1}summary{cursor:pointer;font-weight:600;padding:12px 0}@media(max-width:600px){body{margin:12px}canvas{height:330px}.damage-panel{padding:12px}}</style><h1>Scene Rendering</h1><p>Choose Send current model above to light a separate static copy. Your editor scene and its lighting settings stay unchanged.</p><button id="fullscreen">Fullscreen preview</button><p id="status" role="status">Waiting for a model copy.</p><canvas id="preview"></canvas><section class="damage-panel"><h2>Rundown preview</h2><p>Click a part, or select it in the list. Shift-click adds parts. Dragging still orbits the camera.</p><div class="compact-row"><button id="selectAllParts">Select all</button><button id="clearParts">Clear selection</button><span id="selectionCount">0 selected</span></div><label>Find parts <input id="partSearch" type="search" placeholder="Roof, beam, window..."></label><select id="damageParts" multiple size="6" aria-label="Parts to damage"></select><label class="condition">Condition: intact to ruined <output id="damageValue">0%</output><input id="damageAmount" type="range" min="0" max="100" step="1" value="0"></label><p>Low strength weathers surfaces. Higher strength loosens, drops or hides some whole parts. This is a reversible preview, not a fracture simulation.</p><div class="compact-row"><button id="resetSelected">Restore selected</button><button id="resetDamage">Reset all damage</button></div><p id="damageSummary" role="status">Original BWS model unchanged.</p></section><details><summary>Lighting controls</summary>        <div id="sceneRenderingTools">
+          <strong>Scene Rendering</strong>
+          <div class="toggle-grid">
+            <label class="toggle-chip"><input id="showLightGuidesInput" type="checkbox" /> <span>Show Light Guides</span></label>
+            <label class="toggle-chip"><input id="enablePrimaryLightInput" type="checkbox" checked /> <span>Main Lamp</span></label>
+            <label class="toggle-chip"><input id="enableMirrorLightInput" type="checkbox" checked /> <span>Mirror Lamp</span></label>
+          </div>
+        <div class="compact-row">
+          <label style="flex:1">Lamp X <input id="lightPosXInput" type="number" step="0.5" value="-6" /></label>
+          <label style="flex:1">Y <input id="lightPosYInput" type="number" step="0.5" value="5" /></label>
+          <label style="flex:1">Z <input id="lightPosZInput" type="number" step="0.5" value="6" /></label>
+        </div>
+        <div class="compact-row">
+          <label style="flex:1">Aim X <input id="lightTargetXInput" type="number" step="0.5" value="0" /></label>
+          <label style="flex:1">Y <input id="lightTargetYInput" type="number" step="0.5" value="1.5" /></label>
+          <label style="flex:1">Z <input id="lightTargetZInput" type="number" step="0.5" value="0" /></label>
+        </div>
+        <div class="compact-row">
+          <label style="flex:1">Lamp Strength <input id="lightIntensityInput" type="number" min="0" max="40" step="0.5" value="10" /></label>
+          <label style="flex:1">Cone Deg <input id="lightAngleInput" type="number" min="5" max="80" step="1" value="24" /></label>
+        </div>
+        </div>
+</details><p>Damage is temporary in this plugin window. Reset or resend the model to restore it. Fire placement and exporting damaged scenes are not included yet.</p><!--BWS_SCRIPT--></html>
