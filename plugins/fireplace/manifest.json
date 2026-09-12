@@ -1,0 +1,16 @@
+{
+  "kind": "boltworks-plugin",
+  "manifestVersion": 1,
+  "id": "bws-fireplace",
+  "name": "Fireplace",
+  "version": "0.1.0",
+  "description": "Optional isolated fireplace scene with saved mesh logs, adjustable fire audio and fullscreen viewing. No editor access. Custom BWS scene transfer is not implemented yet.",
+  "runtime": "sandbox-html",
+  "entry": "main.html",
+  "apiVersion": 1,
+  "enabled": false,
+  "contributes": {
+    "toolbar": "scenes",
+    "fullscreen": true
+  }
+}
