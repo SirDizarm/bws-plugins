@@ -1,8 +1,8 @@
 # BoltWorks public plugins
 
-> **For the new BWS 50+ plugin system.** These packages do not install into the legacy edition (49.x or earlier). Check each plugin for its minimum required 50.x version.
+> **For the BoltWorks 3D Studio v50+ plugin system.** These packages do not install into the legacy edition (v49+). Check each plugin for its minimum required 50.x version.
 >
-> **[Visit BoltWorks Studio](https://boltworksstudio.com/)**
+> **[Open BoltWorks 3D Studio](https://3d.boltworksstudio.com/)**
 
 Optional plugins for BoltWorks Studio. Install only what you want; plugins are not automatically enabled or downloaded by the editor.
 
