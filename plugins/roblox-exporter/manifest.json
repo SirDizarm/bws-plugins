@@ -1,0 +1,20 @@
+{
+  "kind": "boltworks-plugin",
+  "manifestVersion": 1,
+  "id": "roblox-exporter",
+  "name": "Roblox Exporter",
+  "version": "1.1.0",
+  "description": "Export one ZIP containing separate OBJ mesh parts, textures, a hierarchy manifest and Roblox Studio assembly scripts. OBJ parts use Roblox studs: 1 stud = 0.28 metres. Receives a model copy only when you choose Send current model.",
+  "runtime": "sandbox-html",
+  "entry": "main.html",
+  "apiVersion": 2,
+  "enabled": false,
+  "dependencies": [],
+  "contributes": {
+    "modelSnapshot": true,
+    "exportDownload": true,
+    "exporters": [
+      "roblox-pack"
+    ]
+  }
+}
