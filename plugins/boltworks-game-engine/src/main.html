@@ -1,0 +1,48 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BoltWorks Game Engine</title><style>body{font:14px Verdana,sans-serif;background:#142125;color:#e3eeea;margin:0;padding:20px;line-height:1.6}button,input,select{font:inherit;border:1px solid #4a635e;border-radius:5px;background:#223638;color:#edf7f3;padding:8px;box-sizing:border-box}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}label{display:flex;gap:8px;align-items:center}.field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}select{max-width:100%;min-width:0;flex:1}.compact-row{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}.section-header{display:none}.api-note{color:#b6cec6}hr{border:0;border-top:1px solid #35524d;margin:24px 0}#preview{width:100%;height:360px;overflow:hidden}input[type=number]{width:85px}</style></head><body><h1>BoltWorks Game Engine</h1><p>Experimental extracted plugin. Send a character copy using the BWS header. Exports are prepared here; save them using <strong>Download export</strong> in that header.</p>        <section class="section collapsed" id="gameEnginePluginSection" data-plugin-id="boltworks-game-engine" data-collapse-persist="boltworks-game-engine">
+          <button class="section-header" id="gameEnginePluginToggle" type="button" aria-expanded="false" aria-controls="gameEnginePluginBody"><h2>BoltWorks Game Engine</h2><span class="plugin-ready">Layered GLB</span></button>
+          <div class="section-body" id="gameEnginePluginBody">
+            <p class="api-note">Exports one Raylib-ready skinned character with explicit lower-body and upper-body tracks. Every clip contains every bone at 24 FPS; unused bones stay at bind pose and root motion stays disabled.</p>
+            <div class="field-grid game-engine-clip-map">
+              <label>Lower Idle<select data-game-engine-clip="Lower_Idle"><option value="">Choose source clip</option></select></label>
+              <label>Lower Walk<select data-game-engine-clip="Lower_Walk"><option value="">Choose source clip</option></select></label>
+              <label>Lower Run<select data-game-engine-clip="Lower_Run"><option value="">Choose source clip</option></select></label>
+              <label>Lower Jump<select data-game-engine-clip="Lower_Jump"><option value="">Choose source clip</option></select></label>
+              <label>Upper Idle<select data-game-engine-clip="Upper_Idle"><option value="">Choose source clip</option></select></label>
+              <label>Upper Slash<select data-game-engine-clip="Upper_Slash"><option value="">Choose source clip</option></select></label>
+              <label>Upper Thrust<select data-game-engine-clip="Upper_Thrust"><option value="">Choose source clip</option></select></label>
+              <label>Upper Block<select data-game-engine-clip="Upper_Block"><option value="">Choose source clip</option></select></label>
+            </div>
+            <div class="compact-row">
+              <button id="gameEngineAutoMapBtn" type="button">Auto-map Clips</button>
+              <button id="gameEngineValidateBtn" type="button">Validate Character</button>
+            </div>
+            <label class="toggle-chip" title="Include full, medium, and low polygon versions in the engine package. The editable project is not changed.">
+              <input id="gameCharacterLodInput" type="checkbox" checked /> <span>Include LODs (full / medium / low)</span>
+            </label>
+            <button id="exportGameCharacterBtn" class="primary" type="button" title="Export the layered skinned GLB, manifest, clip list, sockets, and optional LODs for BoltWorks Game Engine / Raylib">Export Layered Game Character</button>
+            <hr />
+            <strong>First-person Arms</strong>
+            <p class="api-note">Export only the selected skinned arm geometry with the same skeleton and clips. Held equipment is always omitted.</p>
+            <div class="compact-row">
+              <label style="flex:1">Arms <select id="gameArmExportSideInput"><option value="both">Both arms</option><option value="left">Left arm</option><option value="right">Right arm</option></select></label>
+              <button id="exportGameArmsBtn" type="button" title="Export arm-only skinned geometry without weapons or shields">Export Arms GLB</button>
+            </div>
+            <hr />
+            <strong>Image Item to Solid 3D</strong>
+            <p class="api-note">Turn sword or shield art into a thick, socket-ready model. Swords receive a raised diamond ridge; shields receive a textured front, wood back, and metal edge/rim.</p>
+            <div class="compact-row">
+              <button id="gameItemImageBtn" type="button">Choose Item Image</button>
+              <span id="gameItemImageName" class="api-note">No image selected</span>
+              <input id="gameItemImageFile" type="file" accept="image/*,.png,.jpg,.jpeg,.webp" hidden />
+            </div>
+            <div class="compact-row">
+              <label style="flex:1">Item <select id="gameItemTypeInput"><option value="sword">Sword / blade</option><option value="shield">Shield</option></select></label>
+              <label style="flex:1">Height <input id="gameItemHeightInput" type="number" min="0.25" max="20" step="0.25" value="4" /></label>
+              <label style="flex:1">Thickness <input id="gameItemThicknessInput" type="number" min="0.02" max="2" step="0.02" value="0.24" /></label>
+            </div>
+            <button id="gameItemBuildBtn" type="button" disabled>Build Solid Item</button>
+            <p id="gameItemBuildStatus" class="api-note">Choose an image to begin.</p>
+            <p id="gameEngineExportStatus" class="api-note">Map the eight required clips, then validate the character.</p>
+          </div>
+        </section>
+<label>Medium LOD detail (%) <input id="gameOptimizeRatioInput" type="number" min="20" max="90" value="65"></label><h2>Item preview</h2><div id="preview"></div><!--BWS_SCRIPT--></body></html>

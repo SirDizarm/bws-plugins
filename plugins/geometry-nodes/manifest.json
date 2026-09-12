@@ -1,0 +1,20 @@
+{
+  "kind": "boltworks-plugin",
+  "manifestVersion": 1,
+  "id": "geometry-nodes",
+  "name": "Geometry Nodes",
+  "version": "0.2.1",
+  "description": "Experimental extracted graph editor and procedural generator. Requires BWS v50.0.18+. Explicit graph/texture sharing, recipe saving, generated mesh insertion and confirmed output replacement. Scene Studio can request recipe-only previews. Validation pending.",
+  "runtime": "sandbox-html",
+  "entry": "main.html",
+  "apiVersion": 4,
+  "enabled": false,
+  "dependencies": [],
+  "contributes": {
+    "graphWorkspace": true,
+    "fullscreen": true,
+    "generators": [
+      "procedural-geometry"
+    ]
+  }
+}

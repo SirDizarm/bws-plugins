@@ -1,0 +1,15 @@
+{
+  "name": "bws-plugin-geometry-nodes",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "three": "0.165.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

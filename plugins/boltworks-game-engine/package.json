@@ -1,0 +1,15 @@
+{
+  "name": "bws-plugin-game-engine",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "three": "0.165.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

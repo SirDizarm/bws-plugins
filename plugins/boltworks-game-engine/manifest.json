@@ -1,0 +1,22 @@
+{
+  "kind": "boltworks-plugin",
+  "manifestVersion": 1,
+  "id": "boltworks-game-engine",
+  "name": "BoltWorks Game Engine",
+  "version": "1.1.0",
+  "description": "Experimental character ZIP and arm GLB exporter, with image-to-solid sword and shield generation. Requires BWS v50.0.17+. Explicitly share a character copy; downloads and adding items require your click. Validation is pending.",
+  "runtime": "sandbox-html",
+  "entry": "main.html",
+  "apiVersion": 4,
+  "enabled": false,
+  "dependencies": [],
+  "contributes": {
+    "characterSnapshot": true,
+    "characterExport": true,
+    "generatedGameItem": true,
+    "exporters": [
+      "glb",
+      "bws-character"
+    ]
+  }
+}
