@@ -1,0 +1,19 @@
+{
+  "kind": "boltworks-plugin",
+  "manifestVersion": 1,
+  "id": "image-relief-mesh-lab",
+  "name": "Image to Mesh",
+  "version": "1.1.0",
+  "description": "Build an editable mesh from a height image or reference sheet. Includes the existing reconstruction modes and a 3D preview. Choose Add mesh to BWS to insert the result without replacing your scene.",
+  "runtime": "sandbox-html",
+  "entry": "main.html",
+  "apiVersion": 3,
+  "enabled": false,
+  "dependencies": [],
+  "contributes": {
+    "generatedMesh": true,
+    "generators": [
+      "reference-image"
+    ]
+  }
+}

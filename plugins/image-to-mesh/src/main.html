@@ -1,0 +1,41 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Image to Mesh</title><style>:root{color-scheme:dark;font:14px/1.55 "Segoe UI",sans-serif;color:#dce7e8;background:#142125}body{margin:20px}h1{font-size:25px}.compact-row{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}input,select,button{font:inherit;background:#22363c;color:inherit;border:1px solid #526a72;border-radius:5px;padding:7px}input[type=number]{width:75px}button{cursor:pointer}.api-note,#status{color:#b5c9cc}canvas{display:block;width:100%;height:300px;background:#102026;border-radius:8px;margin-top:18px}hr{display:none}</style><h1>Image to Mesh</h1><p>Build a mesh from a height image or a reference sheet. Choose Add mesh to BWS above to insert the result. Existing objects are kept.</p>        <div id="imageReliefMeshPlugin">
+        <hr />
+        <strong>Image to Mesh</strong>
+        <p class="api-note">Import a reference sheet and build one editable 3D mesh from its front, side, and back views.</p>
+        <div class="compact-row">
+          <button id="reliefImageBtn" type="button" title="Load a mannequin or object reference image for height-map mesh generation">Load image</button>
+          <span id="reliefImageName" class="api-note">No image loaded</span>
+          <input id="reliefImageFile" type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.bmp,.gif" hidden />
+        </div>
+        <div class="compact-row">
+          <label style="flex:1">Grid X <input id="reliefGridXInput" type="number" min="8" max="160" step="1" value="160" /></label>
+          <label style="flex:1">Grid Y <input id="reliefGridYInput" type="number" min="8" max="220" step="1" value="220" /></label>
+          <label style="flex:1">Scale <input id="reliefScaleInput" type="number" min="0.5" max="20" step="0.25" value="6" /></label>
+        </div>
+        <div class="compact-row">
+          <label style="flex:1">Depth <input id="reliefDepthInput" type="number" min="0" max="5" step="0.05" value="0.9" /></label>
+          <label style="flex:1">Back <input id="reliefBackInput" type="number" min="0" max="3" step="0.05" value="0.22" /></label>
+          <label style="flex:1">Threshold <input id="reliefThresholdInput" type="number" min="0" max="255" step="1" value="70" /></label>
+        </div>
+        <div class="compact-row">
+          <label style="flex:1">Detail % <input id="reliefDetailInput" type="number" min="0" max="200" step="5" value="100" /></label>
+          <label style="flex:1">Source mode
+            <select id="reliefSourceModeInput">
+              <option value="single">Single height image</option>
+              <option value="sheet" selected>View sheet to one model</option>
+            </select>
+          </label>
+          <label style="flex:1">Reconstruction
+            <select id="reliefBuildModeInput">
+              <option value="hybridV47" selected>Hybrid — continuous mesh + V30 shape</option>
+              <option value="recoveredV30">Recovered V30 original</option>
+              <option value="solidVisualHull">Four-view detailed human</option>
+              <option value="standard">Standard visual hull</option>
+            </select>
+          </label>
+          <label class="toggle-chip" title="Use this when your object is dark on a light background"><input id="reliefDarkForegroundInput" type="checkbox" /> <span>Dark foreground</span></label>
+        </div>
+        <p class="api-note">Hybrid keeps the newer continuous closed mesh, face and fingers, then reshapes only its proportions from V30's silhouette. No V30 triangles enter the final model. Recovered V30 remains available only for comparison. Four-view detailed human accepts Front / Left / Right / Back for asymmetric clothes and accessories.</p>
+        <button id="createReliefMeshBtn" type="button" title="Generate an editable 3D mesh from the loaded reference image">Create image mesh</button>
+        </div>
+<p id="status" role="status">Load an image to begin.</p><canvas id="preview"></canvas><!--BWS_SCRIPT--></html>
