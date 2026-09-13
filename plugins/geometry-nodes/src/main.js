@@ -1,9 +1,36 @@
+function buildAssemblyNodeGraph(graph,previewOnly){
+ const group={id:'geometry-nodes-'+graph.id,name:graph.name};
+ // Evaluate before touching the current preview, so unsupported connections preserve it.
+ let specs;
+ try{
+  specs=evaluateAssembly(graph,{
+   typeOf:id=>geometryNodeTypeForId(graph,id),params:id=>assetNodeSanitize(graph.nodeParams?.[id]||graph.params),fromData:geometryFromData,toData:geometryToData,
+   source:(id,type)=>{
+    const result=[],source=graph.nodeParams?.[id]||graph.params;
+    if(!BWS_ASSET_NODES[type]||BWS_ASSET_NODES[type].attachment)throw Error('Assembly currently supports asset generators and Join Geometry; unsupported input: '+(GEOMETRY_NODE_DEFINITIONS[type]?.title||type));
+    assetNodeBuild(type,source,{graph,nodeId:id,group,outputName:graph.name,attachments:buildingAttachments(graph,id,geometryNodeActiveNodeIds(graph)),emit:spec=>result.push(spec)});
+    return result;
+   }
+  });
+  if(!specs.length)throw Error('Assembly output is empty. Check Remove Parts and your output connections.');
+ }catch(error){setGeometryNodeStatus(error.message);if(previewOnly)throw error;return;}
+ const temporary=new Map(),meshes=[];
+ try{
+  for(const spec of specs){const mesh=geometryNodePreviewMesh(spec,temporary);mesh.userData.id=crypto.randomUUID();mesh.userData.gameAsset=spec.gameAsset;meshes.push(mesh);}
+ }catch(error){for(const mesh of meshes){mesh.geometry.dispose();mesh.material.dispose();}throw error;}
+ if(previewOnly)return meshes;
+ for(const id of graph.generatedIds||[]){const old=findObject(id);if(old)removeObject(old);}
+ for(const mesh of meshes){objects.push(mesh);scene.add(mesh);}
+ graph.generatedIds=meshes.map(mesh=>mesh.userData.id);graph.buildVersion=(graph.buildVersion||0)+1;
+ saveGeometryNodeDraft();updateAll();renderGeometryNodeEditor();setGeometryNodeStatus('Built assembly: '+meshes.length+' parts. Interaction rules require engine support.');
+}
 function round(value,digits=3){const scale=10**digits;return Math.round((Number(value)||0)*scale)/scale;}
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {mergeGeometries,mergeVertices} from 'three/addons/utils/BufferGeometryUtils.js';
 import {createMeshFactory} from './factory.js';
 import {VEHICLE_NODES,buildVehicleNode} from './vehicle-nodes.js';
+import {ASSEMBLY_NODES,evaluateAssembly} from './assembly-nodes.js';
 const drafts=new Map(),localStorage={getItem:key=>drafts.get(key)||null,setItem:(key,value)=>drafts.set(key,String(value))};
 const textureLibrary=new Map(),objects=[],groups=new Map();
 const pluginManifestById=()=>({enabled:true});
@@ -1321,6 +1348,7 @@ function bwsSceneEmitter(type,params,seed){
 
 // geometry-assets
 const BWS_ASSET_NODES = Object.freeze({
+ ...ASSEMBLY_NODES,
  ...VEHICLE_NODES,
  ...BWS_BUILDING_NODES,
  ...BWS_SCENE_ENVIRONMENT_NODES,
@@ -1334,7 +1362,7 @@ const BWS_ASSET_NODES = Object.freeze({
 });
 function assetNodeDefaults(){const p={assetOffsetX:0,assetOffsetY:0,assetOffsetZ:0};for(const n of Object.values(BWS_ASSET_NODES))for(const[k,f]of Object.entries(n.fields))p[k]=f[1];return p;}
 function assetNodeSanitize(source){const p={};for(const n of Object.values(BWS_ASSET_NODES))for(const[k,f]of Object.entries(n.fields)){const v=source[k];p[k]=typeof f[1]==="number"?geometryNodeNumber(v,f[1],f[2],f[3]):typeof f[1]==="boolean"?(typeof v==="boolean"?v:f[1]):Array.isArray(f[2])?(f[2].includes(v)?v:f[1]):(/^#[0-9a-f]{6}$/i.test(v||"")?v:f[1]);if(typeof f[1]==="number"&&f[4]===1)p[k]=Math.round(p[k]);}for(const a of["X","Y","Z"])p["assetOffset"+a]=geometryNodeNumber(source["assetOffset"+a],0,-100,100);return p;}
-function assetNodeFields(type,source,instanceId){const p=assetNodeSanitize(source);let html="";for(const[k,f]of Object.entries(BWS_ASSET_NODES[type].fields))html+=Array.isArray(f[2])?geometryNodeSelectField(f[0],k,p[k],f[2].map(x=>[x,x]),instanceId):geometryNodeField(f[0],k,p[k],{instanceId,type:typeof f[1]==="boolean"?"checkbox":typeof f[1]==="number"?"number":"color",min:f[2],max:f[3],step:f[4]});for(const a of(BWS_ASSET_NODES[type].attachment?[]:["X","Y","Z"]))html+=geometryNodeField("Offset "+a,"assetOffset"+a,p["assetOffset"+a],{instanceId,min:-100,max:100,step:.1});if(type==="brickWall")html+='<button type="button" data-geometry-wall-copy="'+geometryNodeEscape(instanceId)+'">Add copy right</button>';if(type==="brickWall")html+='<p class="geometry-node-card-note">Repeat mode: place copies exactly Length units apart on X. Edge halves share texture, UVs and color. Horizontal only.</p>';if(BWS_ASSET_NODES[type].attachment)return html+'<p class="geometry-node-card-note">Connect after House Layout or House Wall, then onward to Group Output. Uses source dimensions. Roof and Floor require House Layout.</p>';return html+'<p class="geometry-node-card-note">Y up, base at zero. Connect to Group Output. Bake keeps parts editable. Duplicate cards have independent values.</p>';}
+function assetNodeFields(type,source,instanceId){const p=assetNodeSanitize(source);let html="";for(const[k,f]of Object.entries(BWS_ASSET_NODES[type].fields))html+=Array.isArray(f[2])?geometryNodeSelectField(f[0],k,p[k],f[2].map(x=>[x,x]),instanceId):geometryNodeField(f[0],k,p[k],{instanceId,type:typeof f[1]==="boolean"?"checkbox":typeof f[1]==="number"?"number":"color",min:f[2],max:f[3],step:f[4]});for(const a of(BWS_ASSET_NODES[type].attachment?[]:["X","Y","Z"]))html+=geometryNodeField("Offset "+a,"assetOffset"+a,p["assetOffset"+a],{instanceId,min:-100,max:100,step:.1});if(type==="brickWall")html+='<button type="button" data-geometry-wall-copy="'+geometryNodeEscape(instanceId)+'">Add copy right</button>';if(type==="brickWall")html+='<p class="geometry-node-card-note">Repeat mode: place copies exactly Length units apart on X. Edge halves share texture, UVs and color. Horizontal only.</p>';if(ASSEMBLY_NODES[type])return html+'<p class="geometry-node-card-note">Assembly prototype: connect geometry streams. Position and pivot values use model coordinates. Interaction rules are metadata; the game engine must enforce them. Surface picking is not implemented yet.</p>';if(BWS_ASSET_NODES[type].attachment)return html+'<p class="geometry-node-card-note">Connect after House Layout or House Wall, then onward to Group Output. Uses source dimensions. Roof and Floor require House Layout.</p>';return html+'<p class="geometry-node-card-note">Y up, base at zero. Connect to Group Output. Bake keeps parts editable. Duplicate cards have independent values.</p>';}
 function assetNodeSector(profile,a0,a1,steps){const vertices=[],uv=[];
  function quad(a,b,c,d,out){const ab=new THREE.Vector3().subVectors(b,a),ac=new THREE.Vector3().subVectors(c,a),reverse=ab.cross(ac).dot(out)<0;for(const i of(reverse?[0,2,1,0,3,2]:[0,1,2,0,2,3])){vertices.push(...[a,b,c,d][i].toArray());uv.push(...[[0,0],[1,0],[1,1],[0,1]][i]);}}
  const point=(r,y,a)=>new THREE.Vector3(r*Math.cos(a),y,r*Math.sin(a));
@@ -1448,7 +1476,7 @@ function assetNodeBuild(type,source,{graph,nodeId,group,outputName,emit,attachme
 // geometry-nodes
 const GEOMETRY_NODES_STORAGE_KEY = "boltworks.geometryNodes.v1";
 const GEOMETRY_NODE_DEFINITIONS = Object.freeze({
-  ...Object.fromEntries(Object.entries(BWS_ASSET_NODES).map(([type, node]) => [type, Object.freeze({title:node.title || node.label || type, category:node.category || "Game Assets", input:node.attachment ? "Geometry" : "Seed", inputSockets:[node.attachment ? "Geometry" : "Seed","Texture"], output:"Geometry"})])),
+  ...Object.fromEntries(Object.entries(BWS_ASSET_NODES).map(([type, node]) => [type, Object.freeze({title:node.title || node.label || type, category:node.category || "Game Assets", input:node.attachment ? "Geometry" : "Seed", inputSockets:node.inputSockets || [node.attachment ? "Geometry" : "Seed","Texture"], output:"Geometry"})])),
   seed: Object.freeze({ title: "Seed", category: "Inputs", input: null, output: "Seed" }),
   textureRandomizer: Object.freeze({ title: "Texture / Color Randomizer", category: "Inputs", input: "Texture", inputSockets: ["Texture", "Texture 2", "Texture 3", "Texture 4"], output: "Texture" }),
   colorPalette: Object.freeze({title:"Color Palette",category:"Inputs",input:"Texture",inputSockets:["Texture"],output:"Texture"}),
@@ -2017,7 +2045,7 @@ function pasteGeometryNodeClusterString(doc = document) {
   if (value == null) return false;
   return importGeometryNodeClusterText(value, "pasted node string");
 }
-function saveGeometryNodeClusterFile(){const graph=activeGeometryNodeGraph();if(graph){parent.postMessage({type:'bws-graph-file',name:geometryNodeClusterFileName(graph),text:geometryNodeClusterString(graph,true)},'*');setGeometryNodeStatus('Graph file ready. Choose Download graph in the BWS header.');}}
+function saveGeometryNodeClusterFile(){const graph=activeGeometryNodeGraph();if(graph){parent.postMessage({type:'bws-graph-file',name:geometryNodeClusterFileName(graph),text:geometryNodeClusterString(graph,true)},'*');setGeometryNodeStatus('Geometry Nodes file prepared.');}else setGeometryNodeStatus('Create or load Geometry Nodes before saving.');}
 async function loadGeometryNodeClusterFile(file) {
   if (!file) return false;
   if (!String(file.name || "").toLowerCase().endsWith(".bwnc")) {
@@ -2158,7 +2186,7 @@ function geometryNodeCard(graph, type, instanceId = type) {
   return `<article class="geometry-node-card ${type === "output" ? "output" : ""} ${active ? "" : "inactive"}" data-geometry-node="${geometryNodeEscape(instanceId)}" data-geometry-node-type="${type}" style="left:${position[0]}px;top:${position[1]}px"><div class="geometry-node-title" data-geometry-drag="${geometryNodeEscape(instanceId)}"><span>${geometryNodeEscape(title)}</span><button type="button" data-geometry-remove-node="${geometryNodeEscape(instanceId)}" title="Remove ${geometryNodeEscape(definition.title)} node" aria-label="Remove ${geometryNodeEscape(definition.title)} node">×</button></div>${inputSocket}<div class="geometry-node-fields">${fields}</div>${outputSocket}</article>`;
 }
 function geometryNodePaletteMarkup(graph) {
-  const categoryOrder = ["Inputs", "Geometry", "Layout", "Modifiers", "Output", "Growth", "Nature", "Nature Details", "Testing", "Scene", "Game Assets", "Vehicles", "Architecture", "Damage & Effects"];
+  const categoryOrder = ["Inputs", "Geometry", "Layout", "Assembly", "Modifiers", "Output", "Growth", "Nature", "Nature Details", "Testing", "Scene", "Game Assets", "Vehicles", "Architecture", "Damage & Effects"];
   const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))].sort((a,b) => (categoryOrder.includes(a) ? categoryOrder.indexOf(a) : 999) - (categoryOrder.includes(b) ? categoryOrder.indexOf(b) : 999));
   return categories.map(category => `<section><strong>${category}</strong>${GEOMETRY_NODE_TYPES.filter(type => GEOMETRY_NODE_DEFINITIONS[type].category === category).map(type => {
     const count = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
@@ -2890,6 +2918,7 @@ function geometryNodeGrassPointBlocked(x, z, surfaces, clearance) {
 }
 function buildGeometryNodeTree({ centerOutput = false, graphOverride = null, previewOnly = false } = {}) {
   const graph = graphOverride || activeGeometryNodeGraph();
+  if(graph&&[...geometryNodeActiveNodeIds(graph)].some(id=>ASSEMBLY_NODES[geometryNodeTypeForId(graph,id)]))return buildAssemblyNodeGraph(graph,previewOnly);
   const previewMeshes=new Map();
   const lookupMesh=id=>previewOnly?previewMeshes.get(id):findObject(id);
   if (!graph || !GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === type)) || !graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === "output")) return;
@@ -3647,7 +3676,7 @@ function openGeometryNodeContextMenu(doc, card, clientX, clientY) {
 function openGeometryNodeBoardMenu(doc, canvasPoint, clientX, clientY) {
   const graph = activeGeometryNodeGraph();
   if (!graph) return;
-  const categoryOrder = ["Inputs", "Geometry", "Layout", "Modifiers", "Output", "Growth", "Nature", "Nature Details", "Testing", "Scene", "Game Assets", "Vehicles", "Architecture", "Damage & Effects"];
+  const categoryOrder = ["Inputs", "Geometry", "Layout", "Assembly", "Modifiers", "Output", "Growth", "Nature", "Nature Details", "Testing", "Scene", "Game Assets", "Vehicles", "Architecture", "Damage & Effects"];
   const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))].sort((a,b) => (categoryOrder.includes(a) ? categoryOrder.indexOf(a) : 999) - (categoryOrder.includes(b) ? categoryOrder.indexOf(b) : 999));
   const list = categories.map(category => `<section><span class="geometry-node-context-label">${category}</span>${GEOMETRY_NODE_TYPES.filter(type => GEOMETRY_NODE_DEFINITIONS[type].category === category).map(type => {
     const count = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
@@ -4141,6 +4170,12 @@ function updateAll(){
 }
 window.addEventListener('message',event=>{
  if(event.source!==parent)return;const data=event.data;
+ if(data?.type==='bws-geometry-nodes-save'){saveGeometryNodeClusterFile();return;}
+ if(data?.type==='bws-geometry-nodes-load'){
+  if(typeof data.text!=='string'||data.text.length>8000000){setGeometryNodeStatus('Geometry Nodes file is too large.');return;}
+  try{importGeometryNodeClusterText(data.text,String(data.name||'Geometry Nodes.bwnc'));}catch(error){setGeometryNodeStatus('Could not load Geometry Nodes: '+error.message);}
+  return;
+ }
  if(data?.type==='bws-graph-preview-detached'){
   previewDetached=data.detached===true;document.getElementById('pluginPreview').hidden=previewDetached;
   if(previewDetached)document.getElementById('geometryNodesSection').scrollIntoView({block:'start'});
@@ -4178,3 +4213,15 @@ truckTemplate.addEventListener('click',()=>{
  geometryNodeProjectState.graphs.push(graph);geometryNodeProjectState.activeGraphId=graph.id;saveGeometryNodeDraft();renderGeometryNodeEditor();
  buildGeometryNodeTree();document.getElementById('pluginPreview').scrollIntoView({block:'start'});
 });
+
+// Keep recipe file actions above the preview and node editor, retaining their handlers.
+const recipeFileBar=document.createElement('div');
+recipeFileBar.id='geometryNodeRecipeFileBar';
+recipeFileBar.setAttribute('role','toolbar');
+recipeFileBar.setAttribute('aria-label','Node recipe files');
+recipeFileBar.style.cssText='position:sticky;top:0;z-index:50;display:flex;gap:8px;flex-wrap:wrap;padding:10px 0;background:#142125;border-bottom:1px solid #476358;margin-bottom:12px';
+for(const id of ['geometryNodeSaveClusterBtn','geometryNodeLoadClusterBtn']){
+ const button=document.getElementById(id);if(button)recipeFileBar.append(button);
+}
+// Host header owns Save/Load, including the native download and file picker.
+recipeFileBar.hidden=true;recipeFileBar.style.display='none';document.body.prepend(recipeFileBar);

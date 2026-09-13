@@ -39,3 +39,24 @@ Lower wooden and flatbed decks with segmented floor/side boards around rear whee
 
 ## 0.4.5
 Full-width cab front cowl closes the opening below the windshield beside the hood. Not visually tested.
+
+## 0.5.0 - Experimental assembly streams
+Added Remove Parts, Place Part (Target and Part inputs, top/center/bottom/manual anchors, XYZ position/rotation/scale), Hinge (manual pivot, group, axis and limits), and Interaction Volume (oriented debug box, purpose, dimensions, maximum item dimensions, capacity and oversized override). Geometry and Join inputs are evaluated as streams without implicit overlap replacement. Vehicle part groups are inferred from generated part names. Interaction/hinge metadata travels in gameAsset. Missing groups, unsupported legacy procedural nodes and cycles stop before replacing the preview. Current support: asset-generator inputs, Join and assembly nodes; existing graphs retain their old evaluation. Not visually tested. Pending: click-to-place, explicit persistent mounting-point IDs, specific door/hood subgroups, full legacy modifier support, textures in assembly preview, engine enforcement/random filling, and curated templates. Top anchor uses bounding-box top, not the cargo floor. Debug boxes are actual preview geometry tagged debugOnly: disable them before exporting to consumers that do not honor that flag.
+
+## 0.5.1
+Assembly preview meshes now receive unique runtime IDs across graphs. Logical assembly metadata IDs remain separate. Not visually tested.
+
+## 0.5.2
+Cargo stake bolts belong to the cargo assembly instead of the cab, so Remove Parts / cargo also removes those fittings. Not visually retested.
+
+## 0.5.3
+Heavy Cargo Area node: oriented volume, item dimensions, count, maximum item mass, total mass, cargo category and explicit oversized/overweight debug options. Place Part records payload mass and a loadId shared across its meshes so consumers count a vehicle once. Unknown mass is null, not zero. Multiple placed vehicle streams can be combined with Join. These are exported rules only: no automatic fitting, packing, mass calculation, eligibility enforcement or cargo physics yet. Geometry remains merged into a node output; engine entity reconstruction requires engine support. Not tested.
+
+## 0.5.4
+Workspace instructions now explain Save .bwnc for node recipe files and Add generated copy / Save Project for models. BWS v50.0.25 removes the Save graphs to BWS header button. Existing saved recipes remain intact.
+
+## 0.5.5
+Move existing Save .bwnc and Load .bwnc buttons to a sticky toolbar at the top of the plugin workspace, above the preview. Existing file handlers retained; no duplicate lower buttons. Not visually tested.
+
+## 0.5.6
+Host-header Save Geometry Nodes and Load Geometry Nodes use explicit save/load messages (BWS v50.0.26). Removed duplicate internal file toolbar. Import to workspace is additive. Updated instructions. Not visually tested.
