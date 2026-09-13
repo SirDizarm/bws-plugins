@@ -4,11 +4,18 @@ function buildAssemblyNodeGraph(graph,previewOnly){
  let specs;
  try{
   specs=evaluateAssembly(graph,{
-   typeOf:id=>geometryNodeTypeForId(graph,id),params:id=>assetNodeSanitize(graph.nodeParams?.[id]||graph.params),fromData:geometryFromData,toData:geometryToData,
+   typeOf:id=>geometryNodeTypeForId(graph,id),params:id=>({...graph.nodeParams?.[id],...assetNodeSanitize(graph.nodeParams?.[id]||graph.params)}),fromData:geometryFromData,toData:geometryToData,
+   smooth:(geometry,id)=>geometryNodeSmoothGeometry(geometry,graph.smoothNodes.find(n=>n.id===id)?.params||graph.nodeParams[id]),
    source:(id,type)=>{
     const result=[],source=graph.nodeParams?.[id]||graph.params;
-    if(!BWS_ASSET_NODES[type]||BWS_ASSET_NODES[type].attachment)throw Error('Assembly currently supports asset generators and Join Geometry; unsupported input: '+(GEOMETRY_NODE_DEFINITIONS[type]?.title||type));
-    assetNodeBuild(type,source,{graph,nodeId:id,group,outputName:graph.name,attachments:buildingAttachments(graph,id,geometryNodeActiveNodeIds(graph)),emit:spec=>result.push(spec)});
+    if(!BWS_ASSET_NODES[type]||BWS_BUILDING_NODES[type]?.attachment)return buildLegacyInstance(graph,id,{
+     preserveId:key=>!!BWS_ASSET_NODES[geometryNodeTypeForId(graph,key)],
+     typeOf:key=>geometryNodeTypeForId(graph,key),fields:(kind,key)=>geometryNodeFields(graph,kind,key),
+     build:scoped=>buildGeometryNodeTree({graphOverride:scoped,previewOnly:true,legacyInstancePass:true}),
+     spec:mesh=>({shape:'custom',geometry:geometryToData(mesh.geometry),name:mesh.name,position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z].map(THREE.MathUtils.radToDeg),scale:mesh.scale.toArray(),color:'#'+mesh.material.color.getHexString(),roughness:mesh.material.roughness??.8})
+    });
+    if(BWS_ASSET_NODES[type].attachment)throw Error('Connect this building detail to a compatible house source.');
+    assetNodeBuild(type,source,{graph,nodeId:id,group,outputName:graph.name,attachments:[],emit:spec=>result.push(spec)});
     return result;
    }
   });
@@ -31,6 +38,8 @@ import {mergeGeometries,mergeVertices} from 'three/addons/utils/BufferGeometryUt
 import {createMeshFactory} from './factory.js';
 import {VEHICLE_NODES,buildVehicleNode} from './vehicle-nodes.js';
 import {ASSEMBLY_NODES,evaluateAssembly} from './assembly-nodes.js';
+import {buildLegacyInstance} from './legacy-instance.js';
+import {createPreviewAxisGuide} from './axis-guide.js';
 const drafts=new Map(),localStorage={getItem:key=>drafts.get(key)||null,setItem:(key,value)=>drafts.set(key,String(value))};
 const textureLibrary=new Map(),objects=[],groups=new Map();
 const pluginManifestById=()=>({enabled:true});
@@ -1371,6 +1380,7 @@ function assetNodeSector(profile,a0,a1,steps){const vertices=[],uv=[];
  const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.Float32BufferAttribute(vertices,3));g.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));g.computeVertexNormals();return g;
 }
 function assetNodeBuild(type,source,{graph,nodeId,group,outputName,emit,attachments=[]}){
+ graph={...graph,seed:geometryNodeSeedFor(graph,nodeId)};
  const p=assetNodeSanitize(source);
  if(VEHICLE_NODES[type])return buildVehicleNode(type,p,{seed:graph.seed,emit:(geometry,name,position,color,roughness)=>emit(geometryNodeCustomSpec(geometry,{name:outputName+" "+nodeId+" "+name,position:position.map((v,i)=>v+[p.assetOffsetX,p.assetOffsetY,p.assetOffsetZ][i]),color,roughness,group,graph,targetId:nodeId}))});
  if(BWS_DAMAGE_EFFECT_NODES[type])return bwsBuildDamageNode(type,p,{graph,nodeId,group,outputName,emit});
@@ -1927,6 +1937,7 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
     const orderedIds = graph.nodeOrder.flatMap(type => [type, ...graph.smoothNodes.filter(node => node.targetId === type).map(node => node.id)]);
     graph.connections = orderedIds.slice(0, -1).map((fromNodeId, index) => ({ id: geometryNodeId("link"), fromNodeId, toNodeId: orderedIds[index + 1] }));
   }
+  isolateGeometryAssetParams(graph);
   return graph;
 }
 function sanitizeGeometryNodeProjectState(value, { allowEmpty = false } = {}) {
@@ -2100,7 +2111,24 @@ function geometryNodeShortTextureName(name) {
   const value = String(name || "");
   return value.length > 10 ? `${value.slice(0, 10)}...` : value;
 }
+function isolateGeometryAssetParams(graph){
+ graph.nodeParams ||= {};
+ const owners=new Set([graph.params]);
+ for(const id of graph.nodeOrder){
+  const type=geometryNodeTypeForId(graph,id);
+  if(!type)continue;
+  const current=graph.nodeParams[id];
+  if(!current||owners.has(current))graph.nodeParams[id]={...(current||graph.params)};
+  if(type==='seed'&&!Number.isFinite(graph.nodeParams[id].seed))graph.nodeParams[id].seed=graph.seed;
+  owners.add(graph.nodeParams[id]);
+ }
+}
+function geometryNodeSeedFor(graph,nodeId){
+ const connection=graph.connections?.find(c=>c.toNodeId===nodeId&&(Number(c.toInputIndex)||0)===0&&geometryNodeTypeForId(graph,c.fromNodeId)==='seed');
+ return Math.round(geometryNodeNumber(connection?graph.nodeParams?.[connection.fromNodeId]?.seed:graph.seed,graph.seed,0,999999));
+}
 function geometryNodeFields(graph, type, instanceId = type) {
+  isolateGeometryAssetParams(graph);
   const p = graph.nodeParams?.[instanceId] || graph.params;
   if (BWS_ASSET_NODES[type]) return assetNodeFields(type, p, instanceId);
   if (!GEOMETRY_NODE_DEFINITIONS[type]) return '<p class="geometry-node-card-note">This node comes from a newer BWS build. Its saved data and connections are being preserved. Refresh or update BWS to edit and build it.</p>';
@@ -2112,7 +2140,7 @@ function geometryNodeFields(graph, type, instanceId = type) {
       + geometryNodeField("Strength", "strength", settings.strength, { min: .05, max: null, step: .05, instanceId })
       + geometryNodeField("Keep size", "preserveSize", settings.preserveSize, { type: "checkbox", instanceId });
   }
-  if (type === "seed") return geometryNodeField("Value", "seed", graph.seed, { min: 0, max: 999999 });
+  if (type === "seed") return geometryNodeField("Value", "seed", p.seed ?? graph.seed, { min: 0, max: 999999, instanceId });
   if(type==="colorPalette")return geometryNodeField("Active colors","paletteCount",geometryNodeNumber(p.paletteCount,4,1,4),{min:1,max:4,instanceId})+[1,2,3,4].map((n)=>geometryNodeField("Color "+n,"paletteColor"+n,geometryNodePaletteColor(p,n),{type:"color",instanceId})).join("")+'<p class="geometry-node-card-note">Connect an optional texture to tint it, or use colors alone. Connect to a generator Texture socket or a Texture / Color Randomizer. Active colors are selected per part using the graph seed.</p>';
   if (type === "textureRandomizer") return geometryNodeField("Seed offset", "texturePoolSeed", geometryNodeNumber(p.texturePoolSeed, 0, 0, 999999), { min:0, max:999999, instanceId })
     + geometryNodeField("Vary UVs", "texturePoolUvs", p.texturePoolUvs !== false, {type:"checkbox", instanceId})
@@ -2182,7 +2210,7 @@ function geometryNodeCard(graph, type, instanceId = type) {
   }).join("");
   const outputSocket = definition.output ? `<div class="geometry-node-socket output-socket"><span>${geometryNodeEscape(definition.output)}</span><button type="button" class="geometry-node-port output ${outputConnected ? "connected" : ""}" data-geometry-connect-from="${geometryNodeEscape(instanceId)}" title="Start connection from ${geometryNodeEscape(title)}" aria-label="Start connection from ${geometryNodeEscape(title)}">+</button></div>` : "";
   const rawFields = geometryNodeFields(graph, type, instanceId);
-  const fields = instanceId !== type ? rawFields.replaceAll('data-geometry-param="', `data-geometry-instance-param="${geometryNodeEscape(instanceId)}" data-geometry-param="`) : rawFields;
+  const fields = rawFields.replace(/ data-geometry-instance-param="[^"]*"/g,'').replaceAll('data-geometry-param="', `data-geometry-instance-param="${geometryNodeEscape(instanceId)}" data-geometry-param="`);
   return `<article class="geometry-node-card ${type === "output" ? "output" : ""} ${active ? "" : "inactive"}" data-geometry-node="${geometryNodeEscape(instanceId)}" data-geometry-node-type="${type}" style="left:${position[0]}px;top:${position[1]}px"><div class="geometry-node-title" data-geometry-drag="${geometryNodeEscape(instanceId)}"><span>${geometryNodeEscape(title)}</span><button type="button" data-geometry-remove-node="${geometryNodeEscape(instanceId)}" title="Remove ${geometryNodeEscape(definition.title)} node" aria-label="Remove ${geometryNodeEscape(definition.title)} node">×</button></div>${inputSocket}<div class="geometry-node-fields">${fields}</div>${outputSocket}</article>`;
 }
 function geometryNodePaletteMarkup(graph) {
@@ -2916,9 +2944,13 @@ function geometryNodeGrassPointBlocked(x, z, surfaces, clearance) {
     return dx * dx + dz * dz <= 1;
   });
 }
-function buildGeometryNodeTree({ centerOutput = false, graphOverride = null, previewOnly = false } = {}) {
+function buildGeometryNodeTree({ centerOutput = false, graphOverride = null, previewOnly = false, legacyInstancePass = false } = {}) {
   const graph = graphOverride || activeGeometryNodeGraph();
-  if(graph&&[...geometryNodeActiveNodeIds(graph)].some(id=>ASSEMBLY_NODES[geometryNodeTypeForId(graph,id)]))return buildAssemblyNodeGraph(graph,previewOnly);
+  if(graph)isolateGeometryAssetParams(graph);
+  if(graph&&!legacyInstancePass){
+    if([...geometryNodeActiveNodeIds(graph)].some(id=>geometryNodeTypeForId(graph,id)==='houseBatch'))return buildHouseBatch(graph);
+    return buildAssemblyNodeGraph(graph,previewOnly);
+  }
   const previewMeshes=new Map();
   const lookupMesh=id=>previewOnly?previewMeshes.get(id):findObject(id);
   if (!graph || !GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === type)) || !graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === "output")) return;
@@ -3585,10 +3617,13 @@ function addGeometryNodeType(type, position = null) {
     return;
   }
   const instanceCount = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
-  const nodeId = instanceCount ? `${type}::${instanceCount + 1}` : type;
-  if (instanceCount) {
+  let nodeId = type, suffix = 2;
+  while(graph.nodeOrder.includes(nodeId))nodeId=`${type}::${suffix++}`;
+  isolateGeometryAssetParams(graph);
+  {
     graph.nodeParams ||= {};
     graph.nodeParams[nodeId] = { ...graph.params };
+    if(type==='seed')graph.nodeParams[nodeId].seed=graph.seed;
     if (type === "textureInput") Object.assign(graph.nodeParams[nodeId], { textureName: "", textureData: "", textureRandomize: true, textureVariation: 1 });
   }
   const canonicalIndex = GEOMETRY_NODE_TYPES.indexOf(type);
@@ -3921,6 +3956,7 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
     const key = input.dataset.geometryParam;
     const value = input.type === "checkbox" ? input.checked : (input.type === "number" ? Number(input.value) : input.value);
     const instanceId = input.dataset.geometryInstanceParam;
+    isolateGeometryAssetParams(graph);
     if (instanceId) {
       const modifier = graph.smoothNodes.find(node => node.id === instanceId);
       if (modifier) modifier.params[key] = value;
@@ -3945,7 +3981,8 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
     const reader = new FileReader();
     reader.onload = () => {
       const instanceId = textureInput.dataset.geometryTextureInstance;
-      const target = instanceId && instanceId !== "textureInput" ? graph.nodeParams?.[instanceId] : graph.params;
+      isolateGeometryAssetParams(graph);
+      const target = instanceId ? graph.nodeParams?.[instanceId] : null;
       if (!target || typeof reader.result !== "string" || !reader.result.startsWith("data:image/")) return;
       target.textureName = file.name.slice(0, 160);
       target.textureData = reader.result;
@@ -4153,7 +4190,13 @@ const scene=new THREE.Scene();scene.background=new THREE.Color('#17262a');scene.
 const camera=new THREE.PerspectiveCamera(45,2,.01,10000),controls=new OrbitControls(camera,renderer.domElement);camera.position.set(7,6,-12);controls.target.set(0,2,0);controls.update();
 new ResizeObserver(()=>{const w=document.getElementById('pluginPreview').clientWidth;if(w){renderer.setSize(w,320);camera.aspect=w/320;camera.updateProjectionMatrix();}}).observe(document.getElementById('pluginPreview'));
 let previewDetached=false;
-renderer.setAnimationLoop(()=>{if(!previewDetached)renderer.render(scene,camera);});
+document.getElementById('pluginPreview').style.position='relative';
+const inlineAxisGuide=createPreviewAxisGuide(document.getElementById('pluginPreview'),camera,(axis,sign)=>{
+ const distance=Math.max(.1,camera.position.distanceTo(controls.target)),direction=new THREE.Vector3();direction.setComponent(axis,sign);
+ if(axis===1)direction.z=.0001;
+ camera.position.copy(controls.target).addScaledVector(direction.normalize(),distance);controls.update();
+});
+renderer.setAnimationLoop(()=>{if(!previewDetached){renderer.render(scene,camera);inlineAxisGuide.update();}});
 function addObject(spec){
  if(objects.length>=5000)throw Error('Preview limit: 5,000 parts. Reduce the graph or batch size.');
  const g=spec.geometry?geometryFromData(spec.geometry):shapeFactories[spec.shape]?.();if(!g)throw Error('Unsupported shape: '+spec.shape);

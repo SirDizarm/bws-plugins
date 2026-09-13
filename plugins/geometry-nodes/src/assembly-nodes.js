@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const groups=['all','cargo','cab','engine','wheels','chassis'];
+const groups=['all','cargo','cab','engine','wheels','chassis','forks'];
 const selection={assemblyGroup:['Part group','all',groups]};
 const transform={};
 for(const axis of ['X','Y','Z']){
@@ -11,7 +11,7 @@ for(const axis of ['X','Y','Z']){
 export const ASSEMBLY_NODES={
  removeParts:{title:'Remove Parts',category:'Assembly',attachment:true,inputSockets:['Geometry'],fields:selection},
  placePart:{title:'Place Part',category:'Assembly',attachment:true,inputSockets:['Target','Part'],fields:{...selection,
-  placeAnchor:['Placement','top',['top','center','bottom','manual']],placeKeepTarget:['Keep target',true],placeMass:['Cargo weight kg (0 = unspecified)',0,0,100000,10],...transform}},
+  placeAnchor:['Placement','top',['top','center','bottom','manual','forks']],placeKeepTarget:['Keep target',true],placeMass:['Cargo weight kg (0 = unspecified)',0,0,100000,10],...transform}},
  hingePart:{title:'Hinge',category:'Assembly',attachment:true,inputSockets:['Geometry'],fields:{...selection,
   hingeAxis:['Hinge axis','y',['x','y','z']],hingeAngle:['Open angle',0,-180,180,1],hingeMin:['Minimum angle',0,-180,180,1],hingeMax:['Maximum angle',110,-180,180,1],
   hingeX:['Pivot X',0,-1000,1000,.05],hingeY:['Pivot Y',0,-1000,1000,.05],hingeZ:['Pivot Z',0,-1000,1000,.05]}},
@@ -32,8 +32,13 @@ ASSEMBLY_NODES.heavyCargoVolume={title:'Heavy Cargo Area',category:'Assembly',at
  volumeItemMass:['Maximum item weight kg',4000,1,100000,10],volumeTotalMass:['Maximum total load kg',10000,1,1000000,100]
 }};
 
+ASSEMBLY_NODES.forkCargoVolume={title:'Fork Cargo Area',category:'Assembly',attachment:true,inputSockets:['Forklift'],fields:{
+ ...ASSEMBLY_NODES.interactionVolume.fields,
+ volumePurpose:['Purpose','heavyCargo',['heavyCargo']],volumeHeight:['Cargo height',1,.05,10,.05],volumeCapacity:['Item capacity',1,1,100,1],
+ volumeItemMass:['Maximum item weight kg',1500,1,100000,10],volumeTotalMass:['Maximum total load kg',1500,1,1000000,100]
+}};
 // Operates on geometry streams, not the editor scene. Each branch owns its copies.
-export function evaluateAssembly(graph,{typeOf,params,source,fromData,toData}){
+export function evaluateAssembly(graph,{typeOf,params,source,fromData,toData,smooth}){
  const cache=new Map(),visiting=new Set();
  const copy=parts=>structuredClone(parts);
  const meta=part=>part.gameAsset?.assembly;
@@ -63,6 +68,7 @@ export function evaluateAssembly(graph,{typeOf,params,source,fromData,toData}){
    if(type.startsWith('vehicle')){
     group=/tyre|wheel bolt|rim|hub|fender/.test(name)?'wheels':/bed|deck|cargo|tailgate|headboard|log |logging|rear lamp|tail lamp|rear bar|stake bolt/.test(name)?'cargo':/engine|sump|cylinder head|valve|exhaust|intake|radiator core|radiator hose|fan|pulley|filter/.test(name)?'engine':/chassis|crossmember|axle|differential|spring|shaft|fuel tank/.test(name)?'chassis':'cab';
    }
+   if(type==='vehicleForklift'&&/fork tine /.test(name))group='forks';
    part.gameAsset={...part.gameAsset,assembly:{version:1,id:id+':'+name+':'+serial,sourceNode:id,group}};return part;
   });
  }
@@ -73,14 +79,21 @@ export function evaluateAssembly(graph,{typeOf,params,source,fromData,toData}){
   const input=index=>union(links.filter(c=>(c.toInputIndex||0)===index).map(c=>run(c.fromNodeId)));
   let parts;
   if(type==='output'||type==='join')parts=union(links.map(c=>run(c.fromNodeId)));
+  else if(type==='transform'){
+   parts=input(0);
+   const m=new THREE.Matrix4().compose(new THREE.Vector3(p.transformX,p.transformY,p.transformZ),new THREE.Quaternion().setFromEuler(new THREE.Euler(...[p.transformRotX,p.transformRotY,p.transformRotZ].map(THREE.MathUtils.degToRad))),new THREE.Vector3().setScalar(p.transformScale));
+   for(const part of parts){transformPart(part,m);meta(part).id=id+'/'+meta(part).id;}
+  }else if(type==='smoothGeometry'){
+   parts=input(0);for(const part of parts){const g=fromData(part.geometry),result=smooth(g,id);part.geometry=toData(result);result.dispose();meta(part).id=id+'/'+meta(part).id;}
+  }
   else if(type==='removeParts')parts=input(0).filter(part=>!selected(part,p.assemblyGroup));
   else if(type==='placePart'){
    const target=input(0),payload=input(1);
    if(!payload.length)throw Error('Place Part needs geometry connected to its Part socket.');
    let anchor=new THREE.Vector3(),origin=new THREE.Vector3();
    if(p.placeAnchor!=='manual'){
-    const b=bounds(target.filter(part=>selected(part,p.assemblyGroup)));b.getCenter(anchor);
-    if(p.placeAnchor==='top')anchor.y=b.max.y;else if(p.placeAnchor==='bottom')anchor.y=b.min.y;
+    const b=bounds(target.filter(part=>selected(part,p.placeAnchor==='forks'?'forks':p.assemblyGroup)&&!meta(part)?.debugOnly));b.getCenter(anchor);
+    if(p.placeAnchor==='top'||p.placeAnchor==='forks')anchor.y=b.max.y;else if(p.placeAnchor==='bottom')anchor.y=b.min.y;
     const pb=bounds(payload);pb.getCenter(origin);origin.y=pb.min.y;
    }
    anchor.add(new THREE.Vector3(p.placeX,p.placeY,p.placeZ));
@@ -94,11 +107,13 @@ export function evaluateAssembly(graph,{typeOf,params,source,fromData,toData}){
    const m=new THREE.Matrix4().makeTranslation(...pivot.toArray()).multiply(new THREE.Matrix4().makeRotationAxis(axis,THREE.MathUtils.degToRad(angle))).multiply(new THREE.Matrix4().makeTranslation(-pivot.x,-pivot.y,-pivot.z));
    const matches=parts.filter(part=>selected(part,p.assemblyGroup));if(!matches.length)throw Error('Hinge could not find the selected part group.');
    for(const part of matches){transformPart(part,m);meta(part).hinge={id,axis:axis.toArray(),pivot:pivot.toArray(),angle,min:p.hingeMin,max:p.hingeMax};}
-  }else if(type==='interactionVolume'||type==='heavyCargoVolume'){
+  }else if(type==='interactionVolume'||type==='heavyCargoVolume'||type==='forkCargoVolume'){
    parts=input(0);if(!parts.length)throw Error('Connect an asset to Interaction Volume first.');
-   const position=[p.volumeX,p.volumeY,p.volumeZ],rotation=[p.volumeRotX,p.volumeRotY,p.volumeRotZ];
+   const forkBounds=type==='forkCargoVolume'?bounds(parts.filter(part=>selected(part,'forks'))):null;
+   const position=forkBounds?[(forkBounds.min.x+forkBounds.max.x)/2+p.volumeX,forkBounds.max.y+p.volumeHeight/2+p.volumeY-1,(forkBounds.min.z+forkBounds.max.z)/2+p.volumeZ]:[p.volumeX,p.volumeY,p.volumeZ],rotation=[p.volumeRotX,p.volumeRotY,p.volumeRotZ];
    const m=new THREE.Matrix4().compose(new THREE.Vector3(...position),new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation.map(THREE.MathUtils.degToRad))),new THREE.Vector3(1,1,1));
    const volume={id,purpose:type==='heavyCargoVolume'?'heavyCargo':p.volumePurpose,matrix:m.toArray(),size:[p.volumeWidth,p.volumeHeight,p.volumeDepth],maxItemSize:[p.itemWidth,p.itemHeight,p.itemDepth],capacity:p.volumeCapacity,allowOversized:p.volumeOversize,maxItemMassKg:p.volumeItemMass,maxTotalMassKg:p.volumeTotalMass,allowedCargo:p.volumeCargoType,allowOverweight:p.volumeOverweight,massAccounting:'Count each placement loadId once, not once per mesh; null mass is unknown, not zero.'};
+   if(forkBounds){const size=forkBounds.getSize(new THREE.Vector3());volume.size=[size.x,p.volumeHeight,size.z];volume.attachment='forks';}
    meta(parts[0]).volumes=[...(meta(parts[0]).volumes||[]),volume];
    if(p.volumeDebug){
     const sizes=volume.size;

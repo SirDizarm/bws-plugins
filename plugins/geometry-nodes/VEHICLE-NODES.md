@@ -60,3 +60,24 @@ Move existing Save .bwnc and Load .bwnc buttons to a sticky toolbar at the top o
 
 ## 0.5.6
 Host-header Save Geometry Nodes and Load Geometry Nodes use explicit save/load messages (BWS v50.0.26). Removed duplicate internal file toolbar. Import to workspace is additive. Updated instructions. Not visually tested.
+
+## 0.5.7
+Every asset/assembly node now owns its parameter record, including first instances. Existing graph values are snapshotted before edits; shared legacy values are preserved rather than guessed. New asset nodes also get independent records. Fixes truck/forklift colors, body settings and shared assembly controls changing together. Not visually tested.
+
+## 0.5.8
+Inline preview orientation guide with labelled positive/negative axes and six view buttons. Detached equivalent requires BWS v50.0.27. Sidebar node manipulation and picking remain pending. Not visually tested.
+
+## 0.5.9 - Independent saved asset settings
+Legacy recipes now allocate independent asset settings during load and before building, not only when cards render. Shared in-memory parameter objects are separated without replacing saved values. Includes the 0.5.7 input isolation fix. Updating the installed plugin is required; no BWS core changes. Existing overwritten colours cannot be recovered automatically. Built but not interaction-tested.
+
+## 0.5.10 - Input and identity isolation
+Seed, texture, palette and texture-randomizer cards own their settings. Asset generators resolve connected seed values independently. Texture uploads target their own node, including the first texture input. Adding nodes finds an unused ID after deletion; duplicate cards no longer emit duplicate instance attributes. Legacy tree generation still uses a shared pipeline and needs further per-instance evaluation work.
+
+## 0.6.0 - Independent branches and fork cargo
+All node cards now own parameter records, including migrated recipes. Separate legacy geometry branches are evaluated with private recipes; transform and smoothing nodes operate on their own geometry streams. Building-detail chains preserve distinct node IDs, including repeated windows, and resolve against their upstream house rather than being treated as standalone assets. House Batch retains its existing dedicated builder.
+
+Fork Cargo Area follows the forklift tines and exposes cargo height, capacity and weight rules. Connect its output to Place Part's Target socket, connect a load to Part, and choose the forks placement anchor. Fork height raises the tines, cargo area and placed load together. No BWS Studio changes are required.
+
+Browser checks: house template rebuilt successfully (1,889 parts), including two window nodes and a roof. Forklift with a primitive load and fork cargo area rebuilt successfully (88 parts); raising fork height to 1.5 moved the load and area with the forks. Separate tree branches produced distinct heights and branch counts. Earlier candidate checks covered separate truck/forklift paint, body settings, seeds, palettes, texture variation and non-reused node IDs.
+
+Limitations: repeated legacy tree node types within one ancestor chain still use the legacy mesher's single slot per type; full arbitrary modifier stacking is not implemented. Assembly texture rendering remains pending. Cargo eligibility, packing and physics require engine support. House Batch, file-save round trips and every possible mixed-node combination were not retested for this release. Multiple recipes can retain their built outputs in the plugin preview; closing and reopening the plugin starts a fresh preview.

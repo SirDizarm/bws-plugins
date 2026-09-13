@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "geometry-nodes",
   "name": "Geometry Nodes",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "Experimental extracted graph editor and procedural generator. Requires BWS v50.0.18+. Explicit graph/texture sharing, recipe saving, generated mesh insertion and confirmed output replacement. Scene Studio can request recipe-only previews. Validation pending.",
   "runtime": "sandbox-html",
   "entry": "main.html",
