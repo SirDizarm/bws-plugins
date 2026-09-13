@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {mergeGeometries,mergeVertices} from 'three/addons/utils/BufferGeometryUtils.js';
 import {createMeshFactory} from './factory.js';
+import {VEHICLE_NODES,buildVehicleNode} from './vehicle-nodes.js';
 const drafts=new Map(),localStorage={getItem:key=>drafts.get(key)||null,setItem:(key,value)=>drafts.set(key,String(value))};
 const textureLibrary=new Map(),objects=[],groups=new Map();
 const pluginManifestById=()=>({enabled:true});
@@ -1320,6 +1321,7 @@ function bwsSceneEmitter(type,params,seed){
 
 // geometry-assets
 const BWS_ASSET_NODES = Object.freeze({
+ ...VEHICLE_NODES,
  ...BWS_BUILDING_NODES,
  ...BWS_SCENE_ENVIRONMENT_NODES,
  ...BWS_DETAILED_NATURE_NODES,
@@ -1342,6 +1344,7 @@ function assetNodeSector(profile,a0,a1,steps){const vertices=[],uv=[];
 }
 function assetNodeBuild(type,source,{graph,nodeId,group,outputName,emit,attachments=[]}){
  const p=assetNodeSanitize(source);
+ if(VEHICLE_NODES[type])return buildVehicleNode(type,p,{seed:graph.seed,emit:(geometry,name,position,color,roughness)=>emit(geometryNodeCustomSpec(geometry,{name:outputName+" "+nodeId+" "+name,position:position.map((v,i)=>v+[p.assetOffsetX,p.assetOffsetY,p.assetOffsetZ][i]),color,roughness,group,graph,targetId:nodeId}))});
  if(BWS_DAMAGE_EFFECT_NODES[type])return bwsBuildDamageNode(type,p,{graph,nodeId,group,outputName,emit});
  if(BWS_ASSET_NODES[type]?.attachment)return 0;
  if(BWS_VILLAGE_PROP_NODES[type])return bwsBuildVillageProp(type,p,{graph,nodeId,group,outputName,emit});
@@ -1445,7 +1448,7 @@ function assetNodeBuild(type,source,{graph,nodeId,group,outputName,emit,attachme
 // geometry-nodes
 const GEOMETRY_NODES_STORAGE_KEY = "boltworks.geometryNodes.v1";
 const GEOMETRY_NODE_DEFINITIONS = Object.freeze({
-  ...Object.fromEntries(Object.entries(BWS_ASSET_NODES).map(([type, node]) => [type, Object.freeze({title:node.title, category:node.category || "Game Assets", input:node.attachment ? "Geometry" : "Seed", inputSockets:[node.attachment ? "Geometry" : "Seed","Texture"], output:"Geometry"})])),
+  ...Object.fromEntries(Object.entries(BWS_ASSET_NODES).map(([type, node]) => [type, Object.freeze({title:node.title || node.label || type, category:node.category || "Game Assets", input:node.attachment ? "Geometry" : "Seed", inputSockets:[node.attachment ? "Geometry" : "Seed","Texture"], output:"Geometry"})])),
   seed: Object.freeze({ title: "Seed", category: "Inputs", input: null, output: "Seed" }),
   textureRandomizer: Object.freeze({ title: "Texture / Color Randomizer", category: "Inputs", input: "Texture", inputSockets: ["Texture", "Texture 2", "Texture 3", "Texture 4"], output: "Texture" }),
   colorPalette: Object.freeze({title:"Color Palette",category:"Inputs",input:"Texture",inputSockets:["Texture"],output:"Texture"}),
@@ -2155,7 +2158,8 @@ function geometryNodeCard(graph, type, instanceId = type) {
   return `<article class="geometry-node-card ${type === "output" ? "output" : ""} ${active ? "" : "inactive"}" data-geometry-node="${geometryNodeEscape(instanceId)}" data-geometry-node-type="${type}" style="left:${position[0]}px;top:${position[1]}px"><div class="geometry-node-title" data-geometry-drag="${geometryNodeEscape(instanceId)}"><span>${geometryNodeEscape(title)}</span><button type="button" data-geometry-remove-node="${geometryNodeEscape(instanceId)}" title="Remove ${geometryNodeEscape(definition.title)} node" aria-label="Remove ${geometryNodeEscape(definition.title)} node">×</button></div>${inputSocket}<div class="geometry-node-fields">${fields}</div>${outputSocket}</article>`;
 }
 function geometryNodePaletteMarkup(graph) {
-  const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))];
+  const categoryOrder = ["Inputs", "Geometry", "Layout", "Modifiers", "Output", "Growth", "Nature", "Nature Details", "Testing", "Scene", "Game Assets", "Vehicles", "Architecture", "Damage & Effects"];
+  const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))].sort((a,b) => (categoryOrder.includes(a) ? categoryOrder.indexOf(a) : 999) - (categoryOrder.includes(b) ? categoryOrder.indexOf(b) : 999));
   return categories.map(category => `<section><strong>${category}</strong>${GEOMETRY_NODE_TYPES.filter(type => GEOMETRY_NODE_DEFINITIONS[type].category === category).map(type => {
     const count = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
     return `<button type="button" data-geometry-add-node="${type}">+ ${geometryNodeEscape(GEOMETRY_NODE_DEFINITIONS[type].title)}${count ? ` (${count})` : ""}</button>`;
@@ -2215,23 +2219,34 @@ function renderGeometryNodeLinks(canvas, graph, doc = canvas?.ownerDocument) {
   svg.innerHTML = links.join("");
 }
 function fitGeometryNodeSidebarOverview() {
-  const viewport = document.getElementById("geometryNodeViewport");
-  const canvas = document.getElementById("geometryNodeCanvas");
-  if (!viewport || !canvas || viewport.hidden) return;
-  const scale = Math.min(1, Math.max(.12, (viewport.clientWidth - 2) / Math.max(1, canvas.offsetWidth)));
-  canvas.style.transform = `scale(${scale})`;
-  canvas.style.transformOrigin = "top left";
-  const fittedHeight = Math.ceil(canvas.offsetHeight * scale);
-  viewport.style.height = `${fittedHeight}px`;
-  viewport.style.minHeight = `${fittedHeight}px`;
-  geometryNodeRefreshRulers(canvas);
-  viewport.dataset.fitLabel = scale < .95 ? "Overview — open the detached editor for full-size controls" : "";
+ const viewport=document.getElementById('geometryNodeViewport'),canvas=document.getElementById('geometryNodeCanvas');
+ if(!viewport||!canvas)return;
+ viewport.style.height='clamp(360px, 65vh, 900px)';viewport.style.minHeight='360px';viewport.style.overflow='hidden';
+ viewport.scrollLeft=viewport.scrollTop=0;viewport.style.touchAction='none';
+ const graph=activeGeometryNodeGraph();
+ if(graph)updateGeometryNodeDetachedView(geometryNodeSurface(document,'sidebar'),graph,document);
+ viewport.dataset.fitLabel='';geometryNodeRefreshRulers(canvas);
+ if(!document.getElementById('geometryNodeNavigation')){
+  const bar=document.createElement('div');bar.id='geometryNodeNavigation';
+  bar.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0';
+  const hint=document.createElement('span');hint.textContent='Wheel: zoom | Middle-drag or Space + drag: pan';
+  const fit=document.createElement('button');fit.type='button';fit.textContent='Fit nodes';
+  fit.onclick=()=>{
+   const g=activeGeometryNodeGraph(),cards=geometryNodeMeasuredCards(canvas);if(!g||!cards.length)return;
+   const minX=Math.min(...cards.map(c=>c.x)),minY=Math.min(...cards.map(c=>c.y));
+   const width=Math.max(...cards.map(c=>c.x+c.w))-minX,height=Math.max(...cards.map(c=>c.y+c.h))-minY;
+   const scale=Math.max(.05,Math.min(1.5,(viewport.clientWidth-100)/Math.max(1,width),(viewport.clientHeight-80)/Math.max(1,height)));
+   g.view={x:60-minX*scale,y:40-minY*scale,scale};
+   updateGeometryNodeDetachedView(geometryNodeSurface(document,'sidebar'),g,document);saveGeometryNodeDraft();
+  };
+  bar.append(fit,hint);viewport.before(bar);
+ }
 }
 function renderGeometryNodeSurface(doc, kind = "sidebar") {
   const surface = geometryNodeSurface(doc, kind);
   if (!surface?.canvas || !surface.select) return;
   const { canvas, select, status } = surface;
-  if(kind==="sidebar"&&canvas.parentElement){canvas.parentElement.hidden=true;canvas.parentElement.style.display="none";}
+  if(kind==="sidebar"&&canvas.parentElement){canvas.parentElement.hidden=false;canvas.parentElement.style.display="block";}
   if (!geometryNodesRuntimeEnabled) {
     canvas.replaceChildren();
     select.replaceChildren();
@@ -2880,6 +2895,10 @@ function buildGeometryNodeTree({ centerOutput = false, graphOverride = null, pre
   if (!graph || !GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === type)) || !graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === "output")) return;
   // Reject oversized asset graphs before replacing an existing generated result.
   const requestedAssetNodes = geometryNodeActiveNodeIds(graph);
+  if (![...requestedAssetNodes].some(id => GEOMETRY_NODE_SOURCE_TYPES.includes(geometryNodeTypeForId(graph,id)))) {
+    setGeometryNodeStatus('Nothing generated. Connect a geometry source to Group Output, or choose Cargo Truck template.');
+    return;
+  }
   if ([...requestedAssetNodes].some(id => geometryNodeTypeForId(graph, id) === "houseBatch")) {if(previewOnly)throw Error("House Batch is not supported as a nature source.");return buildHouseBatch(graph);}
   let assetPartBudget = 0;
   for (const nodeId of requestedAssetNodes) {
@@ -3411,7 +3430,7 @@ function buildGeometryNodeTree({ centerOutput = false, graphOverride = null, pre
   saveGeometryNodeDraft();
   updateAll();
   renderGeometryNodeEditor();
-  log(`Built ${outputName} from its Geometry Nodes graph.`, { parts: generated.length, seed: graph.seed, nodes: graph.nodeOrder.length, canopy: activeNodes.has("canopy") && p.canopyEnabled });
+  log(generated.length ? `Built ${outputName}: ${generated.length} mesh parts.` : "Nothing generated. Check the connections to Group Output.", { parts: generated.length, seed: graph.seed, nodes: graph.nodeOrder.length, canopy: activeNodes.has("canopy") && p.canopyEnabled });
 }
 function bakeGeometryNodeTree() {
   const graph = activeGeometryNodeGraph();
@@ -3628,7 +3647,8 @@ function openGeometryNodeContextMenu(doc, card, clientX, clientY) {
 function openGeometryNodeBoardMenu(doc, canvasPoint, clientX, clientY) {
   const graph = activeGeometryNodeGraph();
   if (!graph) return;
-  const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))];
+  const categoryOrder = ["Inputs", "Geometry", "Layout", "Modifiers", "Output", "Growth", "Nature", "Nature Details", "Testing", "Scene", "Game Assets", "Vehicles", "Architecture", "Damage & Effects"];
+  const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))].sort((a,b) => (categoryOrder.includes(a) ? categoryOrder.indexOf(a) : 999) - (categoryOrder.includes(b) ? categoryOrder.indexOf(b) : 999));
   const list = categories.map(category => `<section><span class="geometry-node-context-label">${category}</span>${GEOMETRY_NODE_TYPES.filter(type => GEOMETRY_NODE_DEFINITIONS[type].category === category).map(type => {
     const count = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
     return `<button type="button" data-geometry-add-node="${type}" data-geometry-add-x="${Math.round(canvasPoint[0])}" data-geometry-add-y="${Math.round(canvasPoint[1])}">+ ${geometryNodeEscape(GEOMETRY_NODE_DEFINITIONS[type].title)}${count ? ` (${count})` : ""}</button>`;
@@ -3827,7 +3847,7 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
     interaction.pointer = geometryNodeCanvasPoint(canvas, event.clientX, event.clientY);
     renderGeometryNodeLinks(canvas, activeGeometryNodeGraph(), doc);
   });
-  if (kind === "detached") {
+  if (kind === "detached" || kind === "sidebar") {
     const viewport = canvas?.parentElement;
     viewport?.addEventListener("wheel", event => {
       event.preventDefault();
@@ -3835,7 +3855,7 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
       if (!graph) return;
       const before = geometryNodeCanvasPoint(canvas, event.clientX, event.clientY);
       const oldScale = graph.view.scale;
-      graph.view.scale = geometryNodeNumber(oldScale * Math.exp(-event.deltaY * .0012), oldScale, .25, 2.5);
+      graph.view.scale = geometryNodeNumber(oldScale * Math.exp(-event.deltaY * .0012), oldScale, .05, 2.5);
       graph.view.x += before[0] * (oldScale - graph.view.scale);
       graph.view.y += before[1] * (oldScale - graph.view.scale);
       updateGeometryNodeDetachedView(surface, graph, doc);
@@ -3978,10 +3998,10 @@ const viewport=canvas?.parentElement,doc=canvas?.ownerDocument;if(!viewport||!do
 if(!overlay){overlay=doc.createElement("div");overlay.dataset.nodeRulers="true";overlay.style.cssText="position:absolute;inset:0;pointer-events:none;z-index:20;overflow:hidden";viewport.style.position="relative";viewport.appendChild(overlay);}
 canvas.querySelectorAll(".geometry-node-ruler-x,.geometry-node-ruler-y").forEach(el=>el.style.display="none");const c=canvas.getBoundingClientRect(),v=viewport.getBoundingClientRect(),scale=c.width/canvas.offsetWidth;if(!scale)return;const ox=c.left-v.left,oy=c.top-v.top,w=viewport.clientWidth,h=viewport.clientHeight,step=Math.pow(10,Math.ceil(Math.log10(60/scale)));overlay.replaceChildren();
 function item(css,text){const el=doc.createElement("div");el.style.cssText="position:absolute;"+css;if(text!==undefined)el.textContent=text;overlay.appendChild(el);}
-item("left:0;top:0;right:0;height:22px;background:#18262a;border-bottom:1px solid #61747b");item("left:0;top:22px;bottom:0;width:30px;background:#18262a;border-right:1px solid #61747b");
-for(let n=Math.ceil(-ox/(step*scale));n*step*scale+ox<w;n++){const x=n*step*scale+ox;if(x>=30)item("top:0;left:"+x+"px;height:22px;border-left:1px solid #82999f;padding-left:3px;font:10px monospace;color:#d7e7e9",Math.round(n*step));}
-for(let n=Math.ceil(-oy/(step*scale));n*step*scale+oy<h;n++){const y=n*step*scale+oy;if(y>=22)item("left:0;top:"+y+"px;width:30px;border-top:1px solid #82999f;font:9px monospace;color:#d7e7e9",Math.round(n*step));}
-if(point){item("left:"+(ox+point[0]*scale)+"px;top:22px;bottom:0;border-left:1px dashed #63d8bd");item("left:30px;right:0;top:"+(oy+point[1]*scale)+"px;border-top:1px dashed #63d8bd");}
+item("left:0;top:0;right:0;height:22px;background:#18262a;border-bottom:1px solid #61747b");item("left:0;top:22px;bottom:0;width:48px;background:#18262a;border-right:1px solid #61747b");
+for(let n=Math.ceil(-ox/(step*scale));n*step*scale+ox<w;n++){const x=n*step*scale+ox;if(x>=48)item("top:0;left:"+x+"px;height:22px;border-left:1px solid #82999f;padding-left:3px;font:10px monospace;color:#d7e7e9",Math.round(n*step));}
+for(let n=Math.ceil(-oy/(step*scale));n*step*scale+oy<h;n++){const y=n*step*scale+oy;if(y>=22)item("left:0;top:"+y+"px;width:48px;border-top:1px solid #82999f;font:9px monospace;color:#d7e7e9",Math.round(n*step));}
+if(point){item("left:"+(ox+point[0]*scale)+"px;top:22px;bottom:0;border-left:1px dashed #63d8bd");item("left:48px;right:0;top:"+(oy+point[1]*scale)+"px;border-top:1px dashed #63d8bd");}
 }
 function geometryNodePaletteColor(p,n){const defaults=["#908676","#a39780","#786f62","#b1a58b"],value=p?.["paletteColor"+n];return /^#[0-9a-f]{6}$/i.test(value)?value:defaults[n-1];}
 function geometryNodePreviewMesh(spec,collection){const g=spec.geometry?geometryFromData(spec.geometry):shapeFactories[spec.shape]?.();if(!g)throw Error("Unsupported preview geometry: "+spec.shape);const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:spec.color||"#ffffff",roughness:spec.roughness??.85,side:spec.doubleSided?THREE.DoubleSide:THREE.FrontSide}));m.name=spec.name||"Node output";m.position.fromArray(spec.position||[0,0,0]);m.rotation.set(...(spec.rotation||[0,0,0]).map(v=>THREE.MathUtils.degToRad(v)));m.scale.fromArray(spec.scale||[1,1,1]);m.userData={id:"scene-preview-"+collection.size,shape:spec.shape,_sceneTextureUrl:spec.textureUrl||null};m.updateMatrixWorld(true);collection.set(m.userData.id,m);return m;}
@@ -4103,7 +4123,8 @@ const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(
 const scene=new THREE.Scene();scene.background=new THREE.Color('#17262a');scene.add(new THREE.HemisphereLight(0xffffff,0x354532,2));const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(7,12,-9);scene.add(light);
 const camera=new THREE.PerspectiveCamera(45,2,.01,10000),controls=new OrbitControls(camera,renderer.domElement);camera.position.set(7,6,-12);controls.target.set(0,2,0);controls.update();
 new ResizeObserver(()=>{const w=document.getElementById('pluginPreview').clientWidth;if(w){renderer.setSize(w,320);camera.aspect=w/320;camera.updateProjectionMatrix();}}).observe(document.getElementById('pluginPreview'));
-renderer.setAnimationLoop(()=>renderer.render(scene,camera));
+let previewDetached=false;
+renderer.setAnimationLoop(()=>{if(!previewDetached)renderer.render(scene,camera);});
 function addObject(spec){
  if(objects.length>=5000)throw Error('Preview limit: 5,000 parts. Reduce the graph or batch size.');
  const g=spec.geometry?geometryFromData(spec.geometry):shapeFactories[spec.shape]?.();if(!g)throw Error('Unsupported shape: '+spec.shape);
@@ -4120,6 +4141,11 @@ function updateAll(){
 }
 window.addEventListener('message',event=>{
  if(event.source!==parent)return;const data=event.data;
+ if(data?.type==='bws-graph-preview-detached'){
+  previewDetached=data.detached===true;document.getElementById('pluginPreview').hidden=previewDetached;
+  if(previewDetached)document.getElementById('geometryNodesSection').scrollIntoView({block:'start'});
+  return;
+ }
  try{
   if(data?.type==='bws-graph-snapshot'){geometryNodeProjectState=sanitizeGeometryNodeProjectState(data.state,{allowEmpty:true});textureLibrary.clear();for(const texture of data.textures||[])textureLibrary.set(texture.name,texture);renderGeometryNodeEditor();setGeometryNodeStatus('Graph library copied. Changes stay here until you choose Save graphs to BWS.');}
   if(data?.type==='bws-graph-preview-request'){
@@ -4132,3 +4158,23 @@ initializeGeometryNodes();geometryNodesRuntimeEnabled=true;initializeHouseBatchT
 document.getElementById('geometryNodeDetachBtn').textContent='Fullscreen node editor';
 document.getElementById('geometryNodeBuildBtn').textContent='Build preview';
 parent.postMessage({type:'bws-plugin-ready'},'*');
+
+// The standalone plugin cannot open the editor's old detached popup.
+const oldGraphExpand=document.getElementById('geometryNodeDetachBtn');
+const graphExpand=oldGraphExpand.cloneNode(true);oldGraphExpand.replaceWith(graphExpand);
+graphExpand.textContent='Fullscreen workspace';graphExpand.title='Expand this plugin workspace without opening a popup';
+graphExpand.addEventListener('click',async()=>{
+ try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}
+ catch{setGeometryNodeStatus('Fullscreen is unavailable here. The graph remains editable below.');}
+});
+document.addEventListener('fullscreenchange',()=>{graphExpand.textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen workspace';});
+const truckTemplate=document.createElement('button');truckTemplate.type='button';truckTemplate.textContent='Cargo Truck template';
+document.querySelector('[data-geometry-house-template]').after(truckTemplate);
+truckTemplate.addEventListener('click',()=>{
+ if(geometryNodeProjectState.graphs.length>=24){setGeometryNodeStatus('Graph library full. Free a graph slot before adding a template.');return;}
+ const graph=defaultGeometryNodeGraph('Cargo Truck');graph.nodeOrder=['seed','vehicleCargoTruck','output'];
+ graph.connections=[{id:geometryNodeId('link'),fromNodeId:'seed',toNodeId:'vehicleCargoTruck',toInputIndex:0},{id:geometryNodeId('link'),fromNodeId:'vehicleCargoTruck',toNodeId:'output',toInputIndex:0}];
+ graph.nodePositions={seed:[40,40],vehicleCargoTruck:[330,40],output:[650,40]};graph.nodeParams={};graph.smoothNodes=[];graph.generatedIds=[];graph.params.outputName='Cargo Truck';
+ geometryNodeProjectState.graphs.push(graph);geometryNodeProjectState.activeGraphId=graph.id;saveGeometryNodeDraft();renderGeometryNodeEditor();
+ buildGeometryNodeTree();document.getElementById('pluginPreview').scrollIntoView({block:'start'});
+});

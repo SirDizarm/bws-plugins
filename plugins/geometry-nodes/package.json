@@ -1,6 +1,6 @@
 {
   "name": "bws-plugin-geometry-nodes",
-  "version": "0.2.1",
+  "version": "0.4.5",
   "private": true,
   "type": "module",
   "scripts": {
