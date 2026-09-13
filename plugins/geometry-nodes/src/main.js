@@ -29,6 +29,7 @@ function buildAssemblyNodeGraph(graph,previewOnly){
  for(const id of graph.generatedIds||[]){const old=findObject(id);if(old)removeObject(old);}
  for(const mesh of meshes){objects.push(mesh);scene.add(mesh);}
  graph.generatedIds=meshes.map(mesh=>mesh.userData.id);graph.buildVersion=(graph.buildVersion||0)+1;
+ if(poseBuildMode){posePreview?.refresh();if(previewDetached)parent.postMessage({type:'bws-graph-pose-preview',parts:encodeParts(meshes)},'*');return;}
  saveGeometryNodeDraft();updateAll();renderGeometryNodeEditor();setGeometryNodeStatus('Built assembly: '+meshes.length+' parts. Interaction rules require engine support.');
 }
 function round(value,digits=3){const scale=10**digits;return Math.round((Number(value)||0)*scale)/scale;}
@@ -37,6 +38,10 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {mergeGeometries,mergeVertices} from 'three/addons/utils/BufferGeometryUtils.js';
 import {createMeshFactory} from './factory.js';
 import {VEHICLE_NODES,buildVehicleNode} from './vehicle-nodes.js';
+import {VEHICLE_THEME_NODE,resolveVehicleTheme} from './vehicle-theme.js';
+import {mountRecipeCatalog} from './recipe-catalog.js';
+import {createVehicleDamage} from './vehicle-damage.js';
+import {mountPosePreview} from './pose-preview.js';
 import {ASSEMBLY_NODES,evaluateAssembly} from './assembly-nodes.js';
 import {buildLegacyInstance} from './legacy-instance.js';
 import {createPreviewAxisGuide} from './axis-guide.js';
@@ -498,7 +503,7 @@ function buildArchitecture(type,p,ctx){
       const start=new THREE.Vector3(cx+sign*bw*.34,-.7,z+.02),end=new THREE.Vector3(cx+sign*bw*.34,-.15,z+depth*.75),delta=end.clone().sub(start),g=new THREE.BoxGeometry(.11,delta.length(),.11);g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize()));g.translate(...start.add(end).multiplyScalar(.5).toArray());geom(g,'balcony support',color,origin,angle,balcony.nodeId);
     }
   }
-  for(const r of holes){const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2,w=r.x1-r.x0,h=r.y1-r.y0,v=r.settings;if(r.kind==='door'&&v.doorStyle!=='open'){for(let j=0;j<6;j++)box('door plank',r.x0+(j+.5)*w/6,cy+.0275,0,w/6-.006,h-.055,.07,v.doorColor,origin,angle,r.source);box('door handle',r.x1-.12,cy,thick/2+.03,.045,.12,.04,'#393b37',origin,angle,r.source);}if(r.kind==='window'){box('window glass',cx,cy,0,w,h,.025,'#40585c',origin,angle,r.source);if(medieval?.params.medievalLeadedGlass)architectureWindowLeading(w,h,cx,cy,origin,angle,r.source,geom);if(v.windowStyle!=='plain'){box('window mullion',cx,cy,.035,.045,h,.045,v.windowColor,origin,angle,r.source);box('window transom',cx,cy,.035,w,.045,.045,v.windowColor,origin,angle,r.source);}if(v.windowStyle==='shutters')for(const sign of[-1,1])box('open shutter',cx+sign*(w/2+w/4+.06),cy,thick/2+.06,w*.43,h,.05,v.windowColor,origin,angle,r.source);}}
+  for(const r of holes){const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2,w=r.x1-r.x0,h=r.y1-r.y0,v=r.settings;if(r.kind==='door'&&v.doorStyle!=='open'){for(let j=0;j<6;j++)box('door plank',r.x0+(j+.5)*w/6,cy+.0275,0,w/6-.006,h-.055,.07,v.doorColor,origin,angle,r.source);box('door handle',r.x1-.12,cy,thick/2+.03,.045,.12,.04,'#393b37',origin,angle,r.source);}if(r.kind==='window'){box('window glass',cx,cy,0,w,h,.025,'#40585c',origin,angle,r.source);if(medieval?.params.medievalLeadedGlass)architectureWindowLeading(w,h,cx,cy,origin,angle,r.source,geom);if(v.windowStyle!=='plain'){box('window mullion',cx,cy,.035,.045,h,.045,v.windowColor,origin,angle,r.source);box('window transom',cx,cy,.035,w,.045,.045,v.windowColor,origin,angle,r.source);}if(v.windowStyle==='shutters')for(const sign of[-1,1])box('open shutter',cx+sign*(w/2+w/4+.06),cy,thick/2+(stoneGround?.17:.06),w*.43,h,.05,v.windowColor,origin,angle,r.source);}}
  }
  if(isHouse)architectureInteriorAndCorners(attachments,{W,D,H,levels,thick,stairPlan,box,graph,stoneInset,geom});
  const floor=attachments.find(a=>a.type==='floor') || (stairNode?{params:assetNodeSanitize({}),nodeId:stairNode.nodeId}:null);
@@ -523,7 +528,7 @@ function buildArchitecture(type,p,ctx){
  }
  if(stairNode&&stairPlan)architectureBuildStairs(stairPlan,stairNode.params,levels,H,attic,box,geom,stairNode.nodeId);
  const roof=attachments.find(a=>a.type==='roof');
- if(isHouse&&roof){const r=roof.params,half=W/2+r.roofOverhang,length=D+2*r.roofOverhang,rise=effectiveRoofRise(r.roofRise),pitch=Math.atan2(rise,half),slant=Math.hypot(half,rise),base=levels*H,cos=Math.cos(pitch),sin=Math.sin(pitch);
+ if(isHouse&&roof){const r={...roof.params};if(r.roofStyle==='slate'&&String(r.roofColor).toLowerCase()==='#86513b')r.roofColor='#59616a';const half=W/2+r.roofOverhang,length=D+2*r.roofOverhang,rise=effectiveRoofRise(r.roofRise),pitch=Math.atan2(rise,half),slant=Math.hypot(half,rise),base=levels*H,cos=Math.cos(pitch),sin=Math.sin(pitch);
   const stack=attachments.find(a=>a.type==='chimney'),size=stack?Math.min(stack.params.chimneyWidth,W*.22,D*.22):0,cx=-W*.27,cz=-D*.25;
   function panel(sign,u0,u1,z0,z1,depth,shift,label,color,source){if(['curved','scalloped','shingles'].includes(r.roofStyle)&&label!=='roof backing'){const lap=Math.min(.12,slant/r.roofRows*.16);u1=Math.min(slant,u1+lap);}let pieces=[[u0,z0,u1,z1]];
     if(stack){const clearance=label==='roof backing'?-.025:.015;const a=Math.max(u0,Math.min(sign*(cx-size/2-clearance),sign*(cx+size/2+clearance))/cos),b=Math.min(u1,Math.max(sign*(cx-size/2-clearance),sign*(cx+size/2+clearance))/cos),c=Math.max(z0,cz-size/2-clearance),d=Math.min(z1,cz+size/2+clearance);if(a<b&&c<d)pieces=[[u0,z0,a,z1],[b,z0,u1,z1],[a,z0,b,c],[a,d,b,z1]];}
@@ -532,7 +537,7 @@ const original=r.roofStyle==='curved'&&label!=='roof backing'?architectureCurved
 for(const q of pieces){if(q[2]-q[0]<.0001||q[3]-q[1]<.0001)continue;const a=sign*(q[0]-mid),b=sign*(q[2]-mid),g=pieces.length===1&&q[0]===u0&&q[1]===z0&&q[2]===u1&&q[3]===z1?original.clone():architectureClipTile(original,Math.min(a,b),Math.max(a,b),q[1]-zc,q[3]-zc);g.rotateZ(-sign*pitch);g.translate(sign*mid*cos,base+rise-mid*sin+shift,zc);geom(g,label,color,new THREE.Vector3(),0,source);}original.dispose();
   }
   for(const sign of[-1,1]){panel(sign,0,slant,-length/2,length/2,.24,-.055-.0825/cos,'roof backing',timber,nodeId);
-    for(let row=0;row<r.roofRows;row++)for(let col=0;col<r.roofColumns;col++){const rng=geometryNodePrng((graph.seed+row*19349663+col*73856093+(sign+1)*83492791)>>>0),color='#'+new THREE.Color(r.roofColor).multiplyScalar(1+(rng()-.5)*r.roofVariation).getHexString();panel(sign,row*slant/r.roofRows+.002,(row+1)*slant/r.roofRows-.002,-length/2+col*length/r.roofColumns+.003,-length/2+(col+1)*length/r.roofColumns-.003,r.roofStyle==='clay'?.065:.035,.015,'roof '+r.roofStyle+' tile',color,roof.nodeId);}
+    for(let row=0;row<r.roofRows;row++)for(let col=r.roofStyle==='slate'?-1:0;col<r.roofColumns;col++){const stagger=r.roofStyle==='slate'?(row%2)*.5:0,z0=Math.max(-length/2,-length/2+(col+stagger)*length/r.roofColumns)+.003,z1=Math.min(length/2,-length/2+(col+1+stagger)*length/r.roofColumns)-.003;if(z1<=z0)continue;const rng=geometryNodePrng((graph.seed+row*19349663+col*73856093+(sign+1)*83492791)>>>0),color='#'+new THREE.Color(r.roofColor).multiplyScalar(1+(rng()-.5)*r.roofVariation).getHexString();panel(sign,row*slant/r.roofRows+.002,(row+1)*slant/r.roofRows-.002,z0,z1,r.roofStyle==='clay'?.065:r.roofStyle==='slate'?.022:.035,.015,'roof '+r.roofStyle+' tile',color,roof.nodeId);}
   }
   // Gable peaks and eave fillers meet the actual underside of the pitched backing.
   const under=.055+.2025/cos,peak=base+rise-under,eave=base+rise*(1-W/(2*half))-under;
@@ -570,7 +575,9 @@ for(const sign of[-1,1]){const a=cx+sign*inner/2,b=cx+sign*outer/2;flashing(Math
     const z0=-length/2+i*step,z1=Math.min(length/2,z0+step+(i<count-1?overlap:0)),span=z1-z0;
     // The wider socket of each cap fits over the narrower end of its neighbour.
     const g=assetNodeSector([[-span/2,radius, radius-thickness],[span/2,radius+.045,radius+.045-thickness]],0,Math.PI,16);
-    g.rotateX(-Math.PI/2);g.translate(0,base+rise+.04,(z0+z1)/2);
+    // Seat the cap skirts on the slopes; steep roofs need a taller arch so
+    // lowering the skirts does not push the crown below the roof ridge.
+    g.rotateX(-Math.PI/2);g.scale(1,Math.max(1,Math.tan(pitch)+.2),1);g.translate(0,base+rise-radius*Math.tan(pitch)+.04,(z0+z1)/2);
     const rng=geometryNodePrng((graph.seed+i*7919+104729)>>>0),color='#'+new THREE.Color(r.roofColor).multiplyScalar(1+(rng()-.5)*r.roofVariation).getHexString();
     geom(g,'rounded ridge tile '+(i+1),color,new THREE.Vector3(),0,roof.nodeId);
    }
@@ -1136,22 +1143,82 @@ function bwsDamageOriginalHouse(source,settings,seed){
  root.userData.houseDamage={sourceName:source.name,seed,severity,burn,method:"original-connected-pieces"};return root;
 }
 const BWS_DAMAGE_EFFECT_NODES=Object.freeze({
- ruinedHouse:{title:"Ruined House",category:"Damage & Effects",fields:{ruinWidth:["Width",7,2,30,.1],ruinDepth:["Depth",8,2,30,.1],ruinHeight:["Height",7,2,30,.1],ruinDamage:["Damage",.65,.1,1,.05],ruinBurn:["Scorch",.8,0,1,.05]}},
+ ruinedHouse:{title:"Ruined House",category:"Damage & Effects",fields:{ruinConstruction:["Wall construction","stone",["stone","timber-plaster","timber","stone-timber-plaster"]],ruinStoneHeight:["Stone ground floor height",2.5,1,5,.1],ruinWidth:["Width",7,2,30,.1],ruinDepth:["Depth",8,2,30,.1],ruinHeight:["Height",7,2,30,.1],ruinDamage:["Damage",.65,.1,1,.05],ruinBurn:["Scorch",.8,0,1,.05]}},
  ruinRubble:{title:"Rubble Scatter",category:"Damage & Effects",fields:{rubbleRadius:["Radius",3,.3,12,.1],rubbleCount:["Pieces",28,1,100,1],rubbleBurn:["Scorch",.6,0,1,.05]}},
  sceneFire:{title:"Fire Emitter",category:"Damage & Effects",fields:{effectSize:["Size",2,.2,8,.1],effectLifetime:["Lifetime",2,.5,10,.1],effectIntensity:["Intensity",1,0,2,.1],effectWind:["Wind",.3,-2,2,.1],effectColor:["Fire color","#ff761b"]}},
  sceneSmoke:{title:"Smoke Emitter",category:"Damage & Effects",fields:{smokeSize:["Size",3,.2,12,.1],smokeLifetime:["Lifetime",6,1,20,.1],smokeIntensity:["Density",.7,0,1,.05],smokeWind:["Wind",.3,-2,2,.1],smokeColor:["Smoke color","#55514d"]}}
 });
 function bwsBuildDamageNode(type,p,{graph,nodeId,group,outputName,emit}){
- const random=geometryNodePrng(graph.seed>>>0),parts=new Map();
+ const random=geometryNodePrng(graph.seed>>>0),parts=new Map(),ruinMembers=[],ruinAnchors=[],ruinPatches=[];
  function add(g,color){if(g.index){const flat=g.toNonIndexed();g.dispose();g=flat;}g.deleteAttribute("uv");if(!parts.has(color))parts.set(color,[]);parts.get(color).push(g);}
- function box(w,h,d,x,y,z,color){const g=new THREE.BoxGeometry(w,h,d);g.translate(x,y,z);add(g,color);}
- function beam(a,b,width,color){const start=new THREE.Vector3(...a),end=new THREE.Vector3(...b),v=end.clone().sub(start);if(v.length()<.01)return;const g=new THREE.BoxGeometry(width,v.length(),width);g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize()));g.translate(...start.add(end).multiplyScalar(.5).toArray());add(g,color);}
- function rubble(radius,count,burn){for(let i=0;i<count;i++){const a=random()*Math.PI*2,r=Math.sqrt(random())*radius,x=Math.cos(a)*r,z=Math.sin(a)*r;if(i%3===0){const g=new THREE.BoxGeometry(.13,.13,.7+random()*1.5);g.rotateY(random()*Math.PI);g.rotateZ((random()-.5)*.3);g.translate(x,.16,z);add(g,new THREE.Color("#70523a").lerp(new THREE.Color("#211e1b"),burn).getHex());}else{const g=new THREE.IcosahedronGeometry(.12+random()*.25,0);g.scale(1.3,.7,1);g.rotateY(random()*6.28);g.translate(x,.17,z);add(g,new THREE.Color("#8d887b").lerp(new THREE.Color("#45413c"),burn).getHex());}}}
+ function box(w,h,d,x,y,z,color){const g=new THREE.BoxGeometry(w,h,d);g.translate(x,y,z);if(type==='ruinedHouse')ruinAnchors.push(new THREE.Box3(new THREE.Vector3(x-w/2,y-h/2,z-d/2),new THREE.Vector3(x+w/2,y+h/2,z+d/2)));add(g,color);}
+ function beam(a,b,width,color){const start=new THREE.Vector3(...a),end=new THREE.Vector3(...b),v=end.clone().sub(start);if(v.length()<.01)return null;const member={start,end,width,color,supported:false};if(type==='ruinedHouse'){ruinMembers.push(member);return member;}emitMember(member);return member;}
+ function emitMember({start,end,width,color}){const v=end.clone().sub(start),g=new THREE.BoxGeometry(width,v.length(),width);g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize()));g.translate(...start.clone().add(end).multiplyScalar(.5).toArray());add(g,color);}
+ function settleRubble(g,x,z){g.computeBoundingBox();g.translate(x,(type==='ruinedHouse'?.08:0)-g.boundingBox.min.y+.006,z);}
+ function rubble(radius,count,burn){for(let i=0;i<count;i++){const a=random()*Math.PI*2,r=Math.sqrt(random())*radius,x=Math.cos(a)*r,z=Math.sin(a)*r;if(i%3===0){const g=new THREE.BoxGeometry(.13,.13,.7+random()*1.5);g.rotateY(random()*Math.PI);g.rotateZ((random()-.5)*.3);settleRubble(g,x,z);add(g,new THREE.Color("#70523a").lerp(new THREE.Color("#211e1b"),burn).getHex());}else{const g=new THREE.IcosahedronGeometry(.12+random()*.25,0);g.scale(1.3,.7,1);g.rotateY(random()*6.28);settleRubble(g,x,z);add(g,new THREE.Color("#8d887b").lerp(new THREE.Color("#45413c"),burn).getHex());}}}
+ function finishRuinStructure(){
+  // A retained member needs a path through actual joints to masonry or the slab.
+  const point=new THREE.Vector3(),nearest=new THREE.Vector3();
+  function seedMembers(){for(const member of ruinMembers){if(member.supported)continue;const steps=Math.max(1,Math.ceil(member.start.distanceTo(member.end)/Math.max(.05,member.width*.5))),anchors=ruinAnchors.map(b=>b.clone().expandByScalar(member.width/2+.025));for(let i=0;i<=steps&&!member.supported;i++){point.lerpVectors(member.start,member.end,i/steps);member.supported=anchors.some(b=>b.containsPoint(point));}}}
+  const touches=(a,b)=>{const lineA=new THREE.Line3(a.start,a.end),lineB=new THREE.Line3(b.start,b.end),limit=(a.width+b.width)/2+.025;return [a.start,a.end].some(p=>lineB.closestPointToPoint(p,true,nearest).distanceTo(p)<=limit)||[b.start,b.end].some(p=>lineA.closestPointToPoint(p,true,nearest).distanceTo(p)<=limit);};
+  function connectMembers(){seedMembers();let changed=true;while(changed){changed=false;for(const member of ruinMembers)if(!member.supported&&ruinMembers.some(other=>other.supported&&touches(member,other))){member.supported=true;changed=true;}}}
+  connectMembers();
+  if(p.ruinConstruction==='timber-plaster'&&p.ruinDamage>=.75&&!ruinPatches.some(patch=>patch.supports.every(member=>member?.supported))){
+   // Decide from surviving patches, not queued patches that filtering rejects.
+   const w=p.ruinWidth,d=p.ruinDepth,h=p.ruinHeight,wall=h*.62,side=graph.seed%2?-1:1,z0=-d/2,z1=z0+d/(Math.max(3,Math.ceil(d/1.4))-1),wood=new THREE.Color('#74523a').lerp(new THREE.Color('#211c19'),p.ruinBurn).getHex();
+   const corner=ruinMembers.find(member=>member.supported&&Math.abs(member.start.x-side*w/2)<.001&&Math.abs(member.end.x-side*w/2)<.001&&Math.abs(member.start.z-z0)<.001&&Math.abs(member.end.z-z0)<.001&&Math.max(member.start.y,member.end.y)>=wall-.025);
+   if(corner){const supports=[corner];for(const z of [z0,z1]){const start=new THREE.Vector3(side*w/2,wall,z),end=new THREE.Vector3(0,h,z);supports.push(ruinMembers.find(member=>member.start.distanceToSquared(start)<1e-8&&member.end.distanceToSquared(end)<1e-8)||beam(start.toArray(),end.toArray(),.17,wood));}
+    supports.push(beam([side*w/2,wall,z0],[side*w/2,wall,z1],.18,wood),beam([side*w/2,wall-Math.min(1,wall*.35),z0],[side*w/2,wall,z1],.14,wood),beam([0,h,z0],[0,h,z1],.17,wood));
+    connectMembers();
+    if(supports.every(member=>member?.supported))ruinPatches.push({supports,side,z0,z1,from:.12,to:.42,width:w,height:h,wall,color:new THREE.Color('#855b48').lerp(new THREE.Color('#332824'),p.ruinBurn).getHex()});
+   }
+  }
+  for(const member of ruinMembers)if(member.supported)emitMember(member);
+  for(const patch of ruinPatches){if(!patch.supports.every(m=>m?.supported))continue;const {side,z0,z1,from,to,width,height,wall,color}=patch,slant=Math.hypot(width/2,height-wall),pitch=Math.atan2(height-wall,width/2),boards=Math.max(2,Math.ceil((to-from)*slant/.24)),rng=geometryNodePrng((graph.seed+Math.round((z0+100)*997)+Math.round(from*7919)+(side+2)*104729)>>>0);
+   // Each board spans both rafters. Notches break the exposed edges without
+   // cutting away its bearing ends or reducing the patch to isolated strips.
+   for(let i=0;i<boards;i++){const a=from+(to-from)*i/boards,b=from+(to-from)*(i+1)/boards,mid=(a+b)/2,half=Math.max(.01,(b-a)*slant/2-.006),reach=(z1-z0)/2,notch=half*(.2+rng()*.45),shape=new THREE.Shape(),outline=[[-half,-reach],[half,-reach],[half,-reach*.42],[half-notch,-reach*.18],[half,reach*.08],[half,reach],[-half,reach],[-half,reach*.48],[-half+notch*.7,reach*.25],[-half,0]];outline.forEach(([x,z],j)=>j?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();const g=new THREE.ExtrudeGeometry(shape,{depth:.045,bevelEnabled:false,steps:1});g.rotateX(-Math.PI/2);g.translate(0,-.0225,0);g.rotateZ(-side*pitch);g.translate(side*width/2*(1-mid),wall+(height-wall)*mid+.11,(z0+z1)/2);add(g,new THREE.Color(color).multiplyScalar(.88+rng()*.2).getHex());}
+  }
+ }
  if(type==="ruinedHouse"){
   const w=p.ruinWidth,d=p.ruinDepth,h=p.ruinHeight,damage=p.ruinDamage,burn=p.ruinBurn,wall=h*.62;
   const wood=new THREE.Color("#74523a").lerp(new THREE.Color("#211c19"),burn).getHex(),stone=new THREE.Color("#989080").lerp(new THREE.Color("#4b4540"),burn*.8);
   box(w,.08,d,0,.04,0,new THREE.Color("#71665a").lerp(new THREE.Color("#38322e"),burn).getHex());
   for(let side=0;side<4;side++){
+   if(p.ruinConstruction!=='stone'){
+    const lower=p.ruinConstruction==='stone-timber-plaster'?Math.min(p.ruinStoneHeight,h*.36):0;
+    const wall=h*.62-lower;
+    const length=side<2?w:d,bays=Math.max(2,Math.ceil(length/1.5)),width=length/bays;
+    const point=(x,y)=>side<2?[x,y+lower,side===0?d/2:-d/2]:[side===2?-w/2:w/2,y+lower,x];
+    if(lower){
+     const columns=Math.ceil(length/.65),rows=Math.ceil(lower/.38),step=length/columns,rise=lower/rows;
+     for(let c=0;c<columns;c++)for(let row=0;row<rows;row++){
+      const x=-length/2+(c+.5)*step;
+      if(side===0&&Math.abs(x)<.65&&row*rise<lower*.8)continue;
+      const shade=stone.clone().multiplyScalar(.86+random()*.22).getHex();
+      box(side<2?step-.025:.32,rise-.025,side<2?.32:step-.025,side<2?x:(side===2?-w/2:w/2),(row+.5)*rise,side<2?(side===0?d/2:-d/2):x,shade);
+     }
+     beam(point(-length/2,0),point(length/2,0),.23,wood);
+    }
+    beam(point(-length/2,.18),point(length/2,.18),.2,wood);
+    for(let i=0;i<=bays;i++){
+     const x=-length/2+i*width,top=wall*(i===0||i===bays?1:Math.max(.25,1-damage*random()));
+     beam(point(x,.18),point(x,top),.18,wood);
+    }
+    for(let i=0;i<bays;i++){
+     const left=-length/2+i*width,right=left+width,retained=random()>damage*.6;
+     if(retained)beam(point(left,wall),point(right,wall),.18,wood);
+     if(random()>damage*.45)beam(point(left,.25),point(right,wall*(.55+random()*.3)),.12,wood);
+     if(['timber-plaster','stone-timber-plaster'].includes(p.ruinConstruction)&&!(side===0&&i===Math.floor(bays/2))&&random()>damage*.5){
+      const bottom=.28,top=wall*(.45+random()*.45),shape=new THREE.Shape();
+      shape.moveTo(left+.12,bottom);shape.lineTo(right-.12,bottom);shape.lineTo(right-.12,top*.85);shape.lineTo(left+width*.65,top);shape.lineTo(left+width*.45,top*.7);shape.lineTo(left+.12,top*.95);shape.closePath();
+      const g=new THREE.ExtrudeGeometry(shape,{depth:.12,bevelEnabled:false});g.translate(0,lower,-.06);
+      if(side<2)g.translate(0,0,side===0?d/2:-d/2);else{g.rotateY(-Math.PI/2);g.translate(side===2?-w/2:w/2,0,0);}
+      add(g,new THREE.Color('#c2b294').lerp(new THREE.Color('#62554a'),burn*(.35+random()*.4)).getHex());
+     }
+    }
+    continue;
+   }
    const length=side<2?w:d,columns=Math.ceil(length/.65),rows=Math.ceil(wall/.38),step=length/columns;
    for(let c=0;c<columns;c++){const t=(c+.5)/columns,edge=Math.abs(t-.5)*2,top=Math.max(1,Math.floor(rows*(1-damage*(.3+.55*Math.sin(t*Math.PI)))+random()*2));
     for(let row=0;row<top;row++){if(side===0&&Math.abs(t-.5)<.13&&row*.38<Math.min(2,wall*.8))continue;const a=-length/2+(c+.5)*step;
@@ -1161,11 +1228,12 @@ function bwsBuildDamageNode(type,p,{graph,nodeId,group,outputName,emit}){
     if(c%3===0&&edge>.35){const x=side<2?-length/2+(c+.5)*step:(side===2?-w/2:w/2),z=side<2?(side===0?d/2:-d/2):-length/2+(c+.5)*step;beam([x,.1,z],[x,wall*(.7+random()*.3),z],.15,wood);}
    }
   }
-  const rafters=Math.max(3,Math.ceil(d/1.4));
-  for(let i=0;i<rafters;i++){const z=-d/2+i*d/(rafters-1);for(const side of [-1,1]){const a=[side*w/2,wall,z],b=[0,h,z];if(random()>damage*.8)beam(a,b,.17,wood);else beam(a,[side*w*(.15+random()*.2),wall+(h-wall)*random()*.45,z],.17,wood);}}
+  const rafters=Math.max(3,Math.ceil(d/1.4)),fullRafters=new Map();
+  for(let i=0;i<rafters;i++){const z=-d/2+i*d/(rafters-1);for(const side of [-1,1]){const a=[side*w/2,wall,z],b=[0,h,z];if(random()>damage*.8)fullRafters.set(side+':'+i,beam(a,b,.17,wood));else beam(a,[side*w*(.15+random()*.2),wall+(h-wall)*random()*.45,z],.17,wood);}}
   beam([0,h,-d/2],[0,h,d*(.5-damage*.7)],.2,wood);
-  // Surviving roof patches stay against rafters; severe ruins expose the frame.
-  for(const side of [-1,1]){const retained=Math.floor((1-damage)*rafters);for(let i=0;i<retained;i++){const z=-d/2+i*d/(rafters-1);for(let r=0;r<5;r++){const a=r/5,b=(r+1)/5;beam([side*w/2*(1-a),wall+(h-wall)*a,z],[side*w/2*(1-b),wall+(h-wall)*b,z],.32,new THREE.Color("#855b48").lerp(new THREE.Color("#332824"),burn).getHex());}}}
+  // Cover real areas between surviving rafters, not isolated bars along them.
+  for(const side of [-1,1]){let retained=Math.floor((1-damage)*rafters);for(let i=0;i<rafters-1&&retained>0;i++){const supports=[fullRafters.get(side+':'+i),fullRafters.get(side+':'+(i+1))];if(!supports.every(Boolean))continue;retained--;const courses=Math.max(1,Math.ceil((1-damage)*5)),start=Math.floor(random()*(6-courses));for(let row=start;row<start+courses;row++)ruinPatches.push({supports,side,z0:-d/2+i*d/(rafters-1),z1:-d/2+(i+1)*d/(rafters-1),from:row/5,to:(row+1)/5,width:w,height:h,wall,color:new THREE.Color("#855b48").lerp(new THREE.Color("#332824"),burn).getHex()});}}
+  finishRuinStructure();
   rubble(Math.min(w,d)*.44,Math.round(15+damage*55),burn);
  }else if(type==="ruinRubble")rubble(p.rubbleRadius,p.rubbleCount,p.rubbleBurn);
  else{const smoke=type==="sceneSmoke",size=smoke?p.smokeSize:p.effectSize,color=smoke?p.smokeColor:p.effectColor;for(let i=0;i<7;i++){const g=smoke?new THREE.IcosahedronGeometry(size*(.18+i*.025),1):new THREE.ConeGeometry(size*(.17-i*.012),size*.7,7);g.translate((random()-.5)*size*.35,size*(.25+i*.22),(random()-.5)*size*.35);add(g,color);}}
@@ -1357,6 +1425,7 @@ function bwsSceneEmitter(type,params,seed){
 
 // geometry-assets
 const BWS_ASSET_NODES = Object.freeze({
+ vehicleTheme:VEHICLE_THEME_NODE,
  ...ASSEMBLY_NODES,
  ...VEHICLE_NODES,
  ...BWS_BUILDING_NODES,
@@ -1381,8 +1450,15 @@ function assetNodeSector(profile,a0,a1,steps){const vertices=[],uv=[];
 }
 function assetNodeBuild(type,source,{graph,nodeId,group,outputName,emit,attachments=[]}){
  graph={...graph,seed:geometryNodeSeedFor(graph,nodeId)};
- const p=assetNodeSanitize(source);
- if(VEHICLE_NODES[type])return buildVehicleNode(type,p,{seed:graph.seed,emit:(geometry,name,position,color,roughness)=>emit(geometryNodeCustomSpec(geometry,{name:outputName+" "+nodeId+" "+name,position:position.map((v,i)=>v+[p.assetOffsetX,p.assetOffsetY,p.assetOffsetZ][i]),color,roughness,group,graph,targetId:nodeId}))});
+ const local=assetNodeSanitize(source),p=VEHICLE_NODES[type]?resolveVehicleTheme(graph,nodeId,id=>geometryNodeTypeForId(graph,id),local,assetNodeSanitize):local;
+ if(VEHICLE_NODES[type]){
+ const damage=createVehicleDamage(p,{seed:graph.seed,emit:(geometry,name,position,color,roughness,machinery)=>{
+  const spec=geometryNodeCustomSpec(geometry,{name:outputName+" "+nodeId+" "+name,position:position.map((v,i)=>v+[p.assetOffsetX,p.assetOffsetY,p.assetOffsetZ][i]),color,roughness,group,graph,targetId:nodeId});
+  if(machinery)spec.gameAsset={...spec.gameAsset,machinery:{...machinery,nodeId,offset:[p.assetOffsetX,p.assetOffsetY,p.assetOffsetZ]}};
+  emit(spec);
+ }});
+ const count=buildVehicleNode(type,p,{seed:graph.seed,emit:damage.emit});return count+damage.finish();
+ }
  if(BWS_DAMAGE_EFFECT_NODES[type])return bwsBuildDamageNode(type,p,{graph,nodeId,group,outputName,emit});
  if(BWS_ASSET_NODES[type]?.attachment)return 0;
  if(BWS_VILLAGE_PROP_NODES[type])return bwsBuildVillageProp(type,p,{graph,nodeId,group,outputName,emit});
@@ -1488,6 +1564,7 @@ const GEOMETRY_NODES_STORAGE_KEY = "boltworks.geometryNodes.v1";
 const GEOMETRY_NODE_DEFINITIONS = Object.freeze({
   ...Object.fromEntries(Object.entries(BWS_ASSET_NODES).map(([type, node]) => [type, Object.freeze({title:node.title || node.label || type, category:node.category || "Game Assets", input:node.attachment ? "Geometry" : "Seed", inputSockets:node.inputSockets || [node.attachment ? "Geometry" : "Seed","Texture"], output:"Geometry"})])),
   seed: Object.freeze({ title: "Seed", category: "Inputs", input: null, output: "Seed" }),
+  vehicleTheme:Object.freeze({title:'Vehicle Theme',category:'Inputs',input:null,inputSockets:[],output:'Theme'}),
   textureRandomizer: Object.freeze({ title: "Texture / Color Randomizer", category: "Inputs", input: "Texture", inputSockets: ["Texture", "Texture 2", "Texture 3", "Texture 4"], output: "Texture" }),
   colorPalette: Object.freeze({title:"Color Palette",category:"Inputs",input:"Texture",inputSockets:["Texture"],output:"Texture"}),
   textureInput: Object.freeze({ title: "Texture Input", category: "Inputs", input: null, output: "Texture" }),
@@ -2130,6 +2207,7 @@ function geometryNodeSeedFor(graph,nodeId){
 function geometryNodeFields(graph, type, instanceId = type) {
   isolateGeometryAssetParams(graph);
   const p = graph.nodeParams?.[instanceId] || graph.params;
+  if(type==='vehicleTheme')return assetNodeFields(type,p,instanceId).split('<p class="geometry-node-card-note">')[0]+'<p class="geometry-node-card-note">Connect to vehicle Theme sockets. Shape and condition are independent. Vehicle overrides keep individual parts unique. Rust is a material treatment; broken adds simple dents and missing panels.</p>';
   if (BWS_ASSET_NODES[type]) return assetNodeFields(type, p, instanceId);
   if (!GEOMETRY_NODE_DEFINITIONS[type]) return '<p class="geometry-node-card-note">This node comes from a newer BWS build. Its saved data and connections are being preserved. Refresh or update BWS to edit and build it.</p>';
   if (type === "smoothGeometry") {
@@ -4132,6 +4210,8 @@ async function buildHouseBatch(graph,indices=null){
    if(houseBatchStop)break;
    setGeometryNodeStatus('Building house '+(index+1)+' ('+(completed+1)+'/'+selected.length+')...');
    await new Promise(resolve=>setTimeout(resolve,0));
+   // Clear Preview can run while this batch yields to the UI.
+   if(houseBatchStop)break;
    const id=houseBatchOutputId(graph,index),seed=(graph.seed+Math.imul(index+1,7919))>>>0,rng=geometryNodePrng(seed);
    const p={...params,assetOffsetX:0,assetOffsetY:0,assetOffsetZ:0};
    p.buildingWidth=Math.max(4,Math.min(32,params.buildingWidth*(1+(rng()*2-1)*settings.batchVariation)));
@@ -4196,24 +4276,39 @@ const inlineAxisGuide=createPreviewAxisGuide(document.getElementById('pluginPrev
  if(axis===1)direction.z=.0001;
  camera.position.copy(controls.target).addScaledVector(direction.normalize(),distance);controls.update();
 });
-renderer.setAnimationLoop(()=>{if(!previewDetached){renderer.render(scene,camera);inlineAxisGuide.update();}});
+let posePreview,poseBuildMode=false;
+renderer.setAnimationLoop(()=>{if(!previewDetached){posePreview?.update();renderer.render(scene,camera);inlineAxisGuide.update();}});
 function addObject(spec){
  if(objects.length>=5000)throw Error('Preview limit: 5,000 parts. Reduce the graph or batch size.');
  const g=spec.geometry?geometryFromData(spec.geometry):shapeFactories[spec.shape]?.();if(!g)throw Error('Unsupported shape: '+spec.shape);
  const material=new THREE.MeshStandardMaterial({color:spec.color||'#ffffff',roughness:spec.roughness??.8,side:spec.doubleSided?THREE.DoubleSide:THREE.FrontSide,vertexColors:!!g.getAttribute('color')});
- if(/^data:image\//i.test(spec.textureUrl||'')){new THREE.TextureLoader().load(spec.textureUrl,texture=>{texture.colorSpace=THREE.SRGBColorSpace;material.map=texture;material.needsUpdate=true;});}
+ if(/^data:image\//i.test(spec.textureUrl||'')){new THREE.TextureLoader().load(spec.textureUrl,texture=>{if(!objects.includes(mesh)){texture.dispose();return;}texture.colorSpace=THREE.SRGBColorSpace;material.map=texture;material.needsUpdate=true;});}
  const mesh=new THREE.Mesh(g,material);mesh.name=spec.name||'Node part';mesh.position.fromArray(spec.position||[0,0,0]);mesh.rotation.set(...(spec.rotation||[0,0,0]).map(v=>THREE.MathUtils.degToRad(v)));mesh.scale.fromArray(spec.scale||[1,1,1]);mesh.userData={...spec,id:crypto.randomUUID(),_sceneTextureUrl:spec.textureUrl||null};mesh.updateMatrixWorld(true);objects.push(mesh);scene.add(mesh);return mesh;
 }
 function removeObject(mesh){const index=objects.indexOf(mesh);if(index>=0)objects.splice(index,1);scene.remove(mesh);mesh.geometry.dispose();mesh.material.map?.dispose();mesh.material.dispose();}
+function clearGeometryNodePreview(){
+ // These objects/groups belong only to this iframe, never the Studio scene.
+ houseBatchStop=true;
+ posePreview?.clear();
+ for(const mesh of [...objects])removeObject(mesh);
+ groups.clear();
+ for(const graph of geometryNodeProjectState.graphs)graph.generatedIds=[];
+ posePreview?.refresh();
+ parent.postMessage({type:'bws-graph-preview-cleared'},'*');
+ setGeometryNodeStatus('Preview cleared. Recipes and workspace models are unchanged. Build preview to show a model again.');
+}
 function encodeParts(meshes){return meshes.map(mesh=>{mesh.updateMatrixWorld(true);return {name:mesh.name,geometry:geometryToData(mesh.geometry),position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z],scale:mesh.scale.toArray(),color:'#'+mesh.material.color.getHexString(),roughness:mesh.material.roughness??.8,doubleSided:mesh.material.side===THREE.DoubleSide,textureUrl:mesh.userData._sceneTextureUrl||null,textureName:mesh.userData.textureName||null,gameAsset:mesh.userData.gameAsset||null};});}
 function updateAll(){
+ posePreview?.refresh();
  const graph=activeGeometryNodeGraph(),built=(graph?.generatedIds||[]).map(findObject).filter(Boolean);if(!built.length)return;
  const bounds=new THREE.Box3();for(const mesh of built)bounds.expandByObject(mesh);const center=bounds.getCenter(new THREE.Vector3()),size=Math.max(1,bounds.getSize(new THREE.Vector3()).length());controls.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(size*.65,size*.45,-size));camera.lookAt(center);controls.update();
  if(!houseBatchBusy)parent.postMessage({type:'bws-graph-result',graph,parts:encodeParts(built)},'*');
 }
 window.addEventListener('message',event=>{
  if(event.source!==parent)return;const data=event.data;
+ if(data?.type==='bws-graph-clear-preview'){clearGeometryNodePreview();return;}
  if(data?.type==='bws-geometry-nodes-save'){saveGeometryNodeClusterFile();return;}
+ if(data?.type==='bws-graph-pose-command'){posePreview?.command(data);return;}
  if(data?.type==='bws-geometry-nodes-load'){
   if(typeof data.text!=='string'||data.text.length>8000000){setGeometryNodeStatus('Geometry Nodes file is too large.');return;}
   try{importGeometryNodeClusterText(data.text,String(data.name||'Geometry Nodes.bwnc'));}catch(error){setGeometryNodeStatus('Could not load Geometry Nodes: '+error.message);}
@@ -4221,6 +4316,7 @@ window.addEventListener('message',event=>{
  }
  if(data?.type==='bws-graph-preview-detached'){
   previewDetached=data.detached===true;document.getElementById('pluginPreview').hidden=previewDetached;
+  posePreview?.setDetached(previewDetached);
   if(previewDetached)document.getElementById('geometryNodesSection').scrollIntoView({block:'start'});
   return;
  }
@@ -4235,6 +4331,11 @@ window.addEventListener('message',event=>{
 initializeGeometryNodes();geometryNodesRuntimeEnabled=true;initializeHouseBatchTools();renderGeometryNodeEditor();
 document.getElementById('geometryNodeDetachBtn').textContent='Fullscreen node editor';
 document.getElementById('geometryNodeBuildBtn').textContent='Build preview';
+const clearPreviewButton=document.createElement('button');
+clearPreviewButton.type='button';clearPreviewButton.id='geometryNodeClearPreviewBtn';clearPreviewButton.textContent='Clear Preview';
+clearPreviewButton.title='Remove all plugin preview models and stop preview motion. Keeps recipes and Studio workspace models.';
+clearPreviewButton.addEventListener('click',clearGeometryNodePreview);
+document.getElementById('geometryNodeBuildBtn').after(clearPreviewButton);
 parent.postMessage({type:'bws-plugin-ready'},'*');
 
 // The standalone plugin cannot open the editor's old detached popup.
@@ -4268,3 +4369,28 @@ for(const id of ['geometryNodeSaveClusterBtn','geometryNodeLoadClusterBtn']){
 }
 // Host header owns Save/Load, including the native download and file picker.
 recipeFileBar.hidden=true;recipeFileBar.style.display='none';document.body.prepend(recipeFileBar);
+
+posePreview=mountPosePreview({host:document.getElementById('pluginPreview'),canvas:renderer.domElement,camera,
+ graph:()=>activeGeometryNodeGraph(),meshes:()=>{const g=activeGeometryNodeGraph();return(g?.generatedIds||[]).map(findObject).filter(Boolean);},
+ status:setGeometryNodeStatus,
+ commit:(id,values,{transient=false}={})=>{
+  const graph=activeGeometryNodeGraph();if(!graph?.nodeOrder.includes(id))return;
+  const position=camera.position.clone(),target=controls.target.clone();
+  const version=graph.buildVersion;
+  graph.nodeParams[id]={...(graph.nodeParams[id]||graph.params),...values};
+  poseBuildMode=transient;
+  try{buildGeometryNodeTree();if(graph.buildVersion===version)throw Error('Pose could not rebuild. Check the node limits and connections.');}
+  finally{poseBuildMode=false;camera.position.copy(position);controls.target.copy(target);controls.update();}
+ }
+});
+mountRecipeCatalog({
+ host:document.getElementById('pluginPreview'),
+ createGraph:name=>defaultGeometryNodeGraph(name),
+ buildPreview:graph=>buildGeometryNodeTree({graphOverride:sanitizeGeometryNodeGraph(graph),previewOnly:true})||[],
+ loadRecipe:recipe=>{
+  if(geometryNodeProjectState.graphs.length>=24)throw Error('Recipe limit reached. Save and remove an unused recipe first.');
+  const graph=sanitizeGeometryNodeGraph(recipe);graph.id=geometryNodeId('graph');graph.generatedIds=[];
+  geometryNodeProjectState.graphs.push(graph);geometryNodeProjectState.activeGraphId=graph.id;
+  saveGeometryNodeDraft();renderGeometryNodeEditor();buildGeometryNodeTree();document.getElementById('pluginPreview').scrollIntoView({block:'start'});
+ }
+});

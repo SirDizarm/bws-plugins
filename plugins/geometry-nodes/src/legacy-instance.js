@@ -31,6 +31,9 @@ export function buildLegacyInstance(graph, nodeId, api) {
   const meshes = api.build(scoped) || [];
   return meshes.map(mesh => {
     const spec = api.spec(mesh);
+    let label=String(mesh.name||'');
+    for(const prefix of [graph.name,params.outputName].filter(Boolean))label=label.split(prefix).join('');
+    spec.gameAsset={...spec.gameAsset,partLabel:label.trim()};
     spec.name = graph.name + ' ' + nodeId + ' ' + mesh.name;
     mesh.geometry.dispose();
     if (Array.isArray(mesh.material)) mesh.material.forEach(m=>m.dispose()); else mesh.material.dispose();

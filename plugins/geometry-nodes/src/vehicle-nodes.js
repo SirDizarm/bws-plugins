@@ -1,8 +1,14 @@
 import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {VEHICLE_THEME_FIELDS} from './vehicle-theme.js';
+import {MACHINERY_NODES,buildMachineryNode} from './machinery-nodes.js';
+import {VEHICLE_DAMAGE_FIELDS} from './vehicle-damage.js';
 
 const fields={
+ ...VEHICLE_THEME_FIELDS,
+ ...VEHICLE_DAMAGE_FIELDS,
+ vehicleThemeOverride:['Override connected theme',false],
  vehicleBody:['Cargo body','wood',['wood','flatbed','box','logs']],
  vehicleRearAxles:['Rear axle count',1,1,3,1],vehicleCargoHeight:['Cargo height',2,.8,3,.1],
  vehicleLogRows:['Log layers',4,1,6,1],vehicleStacks:['Exhaust stacks',false],
@@ -17,14 +23,17 @@ const fields={
  vehicleTyreWidth:['Tyre width',.3,.22,.42,.02],vehiclePaint:['Paint','#74888a'],
  vehicleWood:['Bed wood','#796049'],vehicleMetal:['Chassis','#34393c'],vehicleRubber:['Rubber','#252728']
 };
-export const VEHICLE_NODES=Object.freeze(Object.fromEntries([
+export const VEHICLE_NODES=Object.freeze({...MACHINERY_NODES,...Object.fromEntries([
  ['vehicleCargoTruck','Cargo Truck'],['vehicleCab','Truck Cab'],['vehicleChassis','Truck Chassis'],
  ['vehicleWheels','Truck Wheel Set'],['vehicleCargoBed','Cargo Bed'],['vehicleInterior','Cab Interior'],['vehicleEngine','Engine'],
  ['vehicleBoxBody','Box Cargo Body'],['vehicleLogRack','Logging Body'],['vehicleExhaust','Exhaust Stacks'],['vehicleForklift','Forklift']
-].map(([id,title])=>[id,{title,category:'Vehicles',fields}])));
+].map(([id,title])=>[id,{title,category:'Vehicles',inputSockets:['Seed','Texture','Theme'],fields:Object.fromEntries(
+ Object.entries(fields).filter(([key])=>id==='vehicleForklift'||!key.startsWith('vehicleFork'))
+)}]))});
 
 // Metres, Y up, forward -X. All component nodes use the same assembly origin.
 export function buildVehicleNode(type,p,{seed=1,emit}){
+ if(MACHINERY_NODES[type])return buildMachineryNode(type,p,{seed,emit});
  const forklift=type==='vehicleForklift';
  const wb=forklift?1.65:p.vehicleWheelbase,w=forklift?1.45:p.vehicleWidth,r=forklift?.36:p.vehicleWheelRadius,tw=p.vehicleTyreWidth;
  const recessedBed=['wood','flatbed'].includes(p.vehicleBody)&&!['vehicleBoxBody','vehicleLogRack'].includes(type);
@@ -38,9 +47,26 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
  let count=0,state=(seed>>>0)||1;
  const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
  const tint=(c,a=.08)=>'#'+new THREE.Color(c).multiplyScalar(1+(random()-.5)*a).getHexString();
- function add(g,name,pos,color,roughness=.8){emit(g,name,pos,color,roughness);count++;}
+ function add(g,name,pos,color,roughness=.8){
+  const condition=p.themeCondition||'clean',wear=p.themeWear??.45;
+  const panel=/panel|hood|cargo wall|counterweight|bed side plank|tailgate|headboard/.test(name);
+  if(condition==='broken'&&/glass|bed side plank|tailgate/.test(name)&&random()<wear*.45){g.dispose();return;}
+  if(condition==='broken'&&panel){
+   const a=g.attributes.position;
+   for(let i=0;i<a.count;i++){const x=a.getX(i),y=a.getY(i),z=a.getZ(i);a.setZ(i,z+Math.sin(x*7+y*5)*.025*wear);}
+   a.needsUpdate=true;g.computeVertexNormals();
+  }
+  if(condition!=='clean'&&!/glass|lens|tyre|rubber|seat|steering wheel/.test(name)){
+   const c=new THREE.Color(color);
+   if((condition==='rusty'||condition==='broken')&&panel)c.lerp(new THREE.Color('#855138'),wear*(.2+random()*.65));
+   else c.multiplyScalar(1-wear*(.08+random()*.16));
+   color='#'+c.getHexString();roughness=Math.max(roughness,.9);
+  }
+  emit(g,name,pos,color,roughness);count++;
+ }
  function box(name,pos,size,color,round=0){
-  const radius=Math.min(round,...size.map(n=>n/2-.001));
+  const rounding=p.themeShape==='square'||p.themeShape==='futuristic'?0:p.themeShape==='round'?Math.max(round,Math.min(...size)*.22):round;
+  const radius=Math.min(rounding,...size.map(n=>n/2-.001));
   add(radius>0?new RoundedBoxGeometry(...size,3,radius):new THREE.BoxGeometry(...size),name,pos,color);
  }
  function cylinder(name,pos,radius,length,color){const g=new THREE.CylinderGeometry(radius,radius,length,24);g.rotateX(Math.PI/2);add(g,name,pos,color,.65);}
@@ -50,12 +76,44 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
  }
  function fender(x,z,label){
   const inner=r+.12,outer=inner+.105,shape=new THREE.Shape();
-  shape.absarc(0,0,outer,0,Math.PI,false);shape.lineTo(-inner,0);shape.absarc(0,0,inner,Math.PI,0,true);shape.closePath();
+  if(axleCount>1&&label.startsWith('rear ')){
+   // Trim only the ends of adjacent arches; keep the tyre clearance circular.
+   const limit=spacing/2-.04;
+   let points=[];
+   for(let i=0;i<=48;i++){const a=i*Math.PI/48;points.push([Math.cos(a)*outer,Math.sin(a)*outer]);}
+   for(let i=48;i>=0;i--){const a=i*Math.PI/48;points.push([Math.cos(a)*inner,Math.sin(a)*inner]);}
+   for(const sign of [-1,1]){
+    const clipped=[];
+    for(let i=0;i<points.length;i++){
+     const a=points[i],b=points[(i+1)%points.length],insideA=sign*a[0]<=limit,insideB=sign*b[0]<=limit;
+     if(insideA)clipped.push(a);
+     if(insideA!==insideB){const t=(sign*limit-a[0])/(b[0]-a[0]);clipped.push([sign*limit,a[1]+t*(b[1]-a[1])]);}
+    }
+    points=clipped;
+   }
+   shape.moveTo(...points[0]);for(const point of points.slice(1))shape.lineTo(...point);shape.closePath();
+  }else{
+   shape.absarc(0,0,outer,0,Math.PI,false);shape.lineTo(-inner,0);shape.absarc(0,0,inner,Math.PI,0,true);shape.closePath();
+  }
   const depth=tw+.18,g=new THREE.ExtrudeGeometry(shape,{depth,steps:1,curveSegments:24,bevelEnabled:true,bevelSize:.018,bevelThickness:.018,bevelSegments:2});
   g.translate(0,0,-depth/2);add(g,label,[x,r,z],paint);
  }
  function cab(){
   const cabFront=front+.17,cabLen=cabBack-cabFront,center=(cabFront+cabBack)/2,base=r+.25,waist=roof*.61;
+  // Cut the side panels around the outside of the fender, including its bevel.
+  function archPanel(name,left,right,bottom,top,z,depth,color){
+   const clearance=r+.225+.018+.025;
+   if(top<=r)return;
+   const start=Math.max(left,front+Math.sqrt(Math.max(0,clearance*clearance-(top-r)*(top-r))));
+   if(start>=right)return;
+   const lower=x=>Math.max(bottom,r+Math.sqrt(Math.max(0,clearance*clearance-(x-front)*(x-front))));
+   const shape=new THREE.Shape();
+   shape.moveTo(start,top);shape.lineTo(right,top);
+   for(let i=48;i>=0;i--){const x=start+(right-start)*i/48;shape.lineTo(x,Math.min(top,lower(x)));}
+   shape.closePath();
+   const geometry=new THREE.ExtrudeGeometry(shape,{depth,steps:1,bevelEnabled:false});
+   geometry.translate(0,0,-depth/2);add(geometry,name,[0,0,z],color);
+  }
   box('cab floor',[center,base,0],[cabLen,.13,w*.89],metal,.035);
   box('cab front cowl panel',[cabFront-.015,(base+waist)/2,0],[.12,waist-base,w*.91],paint,.025);
   box('cab rear panel',[cabBack-.055,(roof+base)/2,0],[.12,roof-base,w*.9],paint,.055);
@@ -63,13 +121,13 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
   box('dashboard',[cabFront+.2,waist,0],[.32,.18,w*.81],metal,.035);
   for(const side of [-1,1]){
    const z=side*w*.45;
-   box('door lower panel '+side,[center,(base+waist)/2,z],[cabLen-.10,waist-base,.085],paint,.035);
-   box('door sill '+side,[center,base+.035,z],[cabLen,.09,.13],metal,.02);
+   archPanel('door lower panel '+side,cabFront+.05,cabBack-.05,base,waist,z,.085,paint);
+   archPanel('door sill '+side,cabFront,cabBack,base-.01,base+.08,z,.13,metal);
    for(const x of [cabFront+.06,cabBack-.15])box('window pillar '+side+' '+x,[x,(waist+roof-.16)/2,z],[.095,roof-.16-waist,.11],paint,.025);
    if(p.vehicleShowGlass)box('side window glass '+side,[center-.04,(waist+roof-.20)/2,z-side*.026],[cabLen-.30,roof-.20-waist,.025],'#263b43',.01);
    box('window sill '+side,[center,waist,z],[cabLen-.12,.065,.11],metal,.015);
    box('door handle '+side,[cabBack-.3,waist-.15,z+side*.07],[.17,.045,.045],'#b2b0a6',.015);
-   box('running board '+side,[center,base-.18,z],[cabLen+.22,.09,.35],metal,.025);
+   archPanel('running board '+side,cabFront-.11,cabBack+.11,base-.225,base-.135,z,.35,metal);
    beam('mirror arm '+side,[cabFront+.1,waist+.24,z],[cabFront-.03,waist+.32,z+side*.28],.022,metal);
    box('mirror housing '+side,[cabFront-.03,waist+.38,z+side*.30],[.08,.22,.14],metal,.035);
    box('mirror face '+side,[cabFront+.016,waist+.38,z+side*.30],[.012,.17,.10],'#a2b8bc',.015);
@@ -79,13 +137,19 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
   box('windshield lower frame',[cabFront-.055,waist,0],[.09,.09,w*.91],paint,.025);
   const nose=front-.87,hoodLength=cabFront-nose;
   if(p.vehicleShowHood){
-   const hood=new RoundedBoxGeometry(hoodLength,.48,w*.65,5,.18),hp=hood.attributes.position;
+   const angular=p.themeShape==='square'||p.themeShape==='futuristic';
+   const hood=angular?new THREE.BoxGeometry(hoodLength,.48,w*.65):new RoundedBoxGeometry(hoodLength,.48,w*.65,5,.18),hp=hood.attributes.position;
    for(let i=0;i<hp.count;i++){
     const t=(hp.getX(i)+hoodLength/2)/hoodLength;
-    hp.setZ(i,hp.getZ(i)*(.90+.10*t));hp.setY(i,hp.getY(i)-.07*(1-t));
+    hp.setZ(i,hp.getZ(i)*(p.themeShape==='futuristic'?.70+.30*t:.90+.10*t));hp.setY(i,hp.getY(i)-(p.themeShape==='futuristic'?.18:.07)*(1-t));
    }
    hood.computeVertexNormals();add(hood,'tapered rounded hood',[(nose+cabFront)/2,r+.94,0],paint);
-   box('hood center seam',[(nose+cabFront)/2,r+1.184,0],[hoodLength-.18,.012,.018],metal);
+   const seam=new THREE.BoxGeometry(hoodLength-(angular?.18:.40),.012,.018),sp=seam.attributes.position;
+   for(let i=0;i<sp.count;i++){
+    const t=(sp.getX(i)+hoodLength/2)/hoodLength;
+    sp.setY(i,sp.getY(i)-(p.themeShape==='futuristic'?.18:.07)*(1-t));
+   }
+   seam.computeVertexNormals();add(seam,'hood center seam',[(nose+cabFront)/2,r+1.184,0],metal);
    for(const side of [-1,1]){
     box('hood lower side panel '+side,[(nose+cabFront)/2,r+.46,side*(w*.325-.032)],
      [hoodLength-.035,.55,.065],paint,.022);
@@ -241,7 +305,14 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
     if(recessedBed){
      // Close the inboard face of the curved housing, outside the tyre envelope.
      const radius=r+.225,base=deck-.043-r,angle=Math.asin(Math.min(.99,Math.max(0,base/radius)));
-     const shape=new THREE.Shape();shape.absarc(0,0,radius,angle,Math.PI-angle,false);shape.closePath();
+     const shape=new THREE.Shape();
+     const endAngle=axleCount>1?Math.max(angle,Math.acos(Math.min(1,(spacing/2-.04)/radius))):angle;
+     shape.absarc(0,0,radius,endAngle,Math.PI-endAngle,false);
+     if(endAngle>angle){
+      const endX=radius*Math.cos(endAngle);
+      shape.lineTo(-endX,base);shape.lineTo(endX,base);
+     }
+     shape.closePath();
      const cap=new THREE.ExtrudeGeometry(shape,{depth:.025,steps:1,curveSegments:24,bevelEnabled:false});
      cap.translate(0,0,-.0125);
      add(cap,name+' inner wheel tub '+side,[x,r,side*(track-(tw+.18)/2)],paint);
