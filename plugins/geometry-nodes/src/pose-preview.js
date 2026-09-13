@@ -11,7 +11,7 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
  function button(text,action){const b=document.createElement('button');b.type='button';b.textContent=text;b.addEventListener('click',action);panel.insertBefore(b,panel.lastElementChild);return b;}
  const apply=button('Apply angle',()=>setAngle(angle.value));
  const minus=button('-5 degrees',()=>setAngle(Number(angle.value)-5)),plus=button('+5 degrees',()=>setAngle(Number(angle.value)+5));
- const limits=button('Apply limits',setLimits),reset=button('Reset joint',()=>setAngle(0));
+ const limits=button('Apply limits',setLimits),reset=button('Reset joint',()=>{limitDraft=null;setAngle(0);});
  const keep=button('Keep pose',()=>stop(false,true));
  const layer=document.createElement('div');layer.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden';host.append(layer);
  const dial=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -23,7 +23,7 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
  const selectionLabel=document.createElement('strong');selectionLabel.style.cssText='color:#e7ca7d;font-size:12px';panel.prepend(selectionLabel);
  const friendly={slew:'Rotate vehicle body',boom:'Raise main arm',stick:'Bend outer arm',bucket:'Curl excavator bucket','crane-boom':'Raise crane boom','cab-door':'Open cab door','tractor-loader':'Raise loader arms','tractor-loader-bucket':'Tilt loader bucket','tipping-bed':'Tip cargo bed',tailgate:'Open tailgate'};
  function label(j){return friendly[j.id]||j.pose.label;}
- let pending=null,liveFrame=null,dragging=false,dragAngle=0,dragValue=0;
+ let pending=null,liveFrame=null,dragging=false,dragAngle=0,dragValue=0,limitDraft=null;
  let joints=[],markers=[],signature='',selected='',animation=null,timer=null,autoGraph='';
  const ray=new THREE.Raycaster();
  function active(){return joints.find(j=>j.key===selected);}
@@ -33,7 +33,8 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
   const value=pending?.nodeId===j.nodeId&&pending.parameter===j.pose.parameter?pending.value:j.pose.value;
   select.value=j.key;angle.value=slider.value=value;selectionLabel.textContent=label(j)+' / '+value+'\u00b0';
   angle.min=slider.min=j.pose.minimum;angle.max=slider.max=j.pose.maximum;
-  minimum.value=j.pose.minimum;maximum.value=j.pose.maximum;
+  if(limitDraft&&limitDraft.key!==j.key)limitDraft=null;
+  minimum.value=limitDraft?.minimum??j.pose.minimum;maximum.value=limitDraft?.maximum??j.pose.maximum;
   minimum.min=maximum.min=j.pose.hardMin;minimum.max=maximum.max=j.pose.hardMax;
  }
  function write(id,values,options){
@@ -45,7 +46,7 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
   if(old&&graph()?.id===old.graphId&&(restore||save))write(old.nodeId,{[old.parameter]:restore?old.value:(active()?.pose.value??old.value)});
   sync();
  }
- function choose(key){stop();selected=key;sync();}
+ function choose(key){stop();if(selected!==key)limitDraft=null;selected=key;sync();}
  select.addEventListener('change',()=>choose(select.value));
  function setAngle(value){const j=active();if(!j||!Number.isFinite(Number(value)))return;stop(false);write(j.nodeId,{[j.pose.parameter]:THREE.MathUtils.clamp(Number(value),j.pose.minimum,j.pose.maximum)});}
  function liveAngle(value){
@@ -57,10 +58,12 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
  slider.addEventListener('input',()=>liveAngle(slider.value));
  angle.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();setAngle(angle.value);}});slider.addEventListener('change',()=>setAngle(slider.value));
  function setLimits(){
-  const j=active();if(!j)return;const lo=Number(minimum.value),hi=Number(maximum.value);
-  if(!Number.isFinite(lo)||!Number.isFinite(hi)||lo>hi||lo<j.pose.hardMin||hi>j.pose.hardMax){status('Choose ordered limits inside '+j.pose.hardMin+' to '+j.pose.hardMax+' degrees.');sync();return;}
+  const j=active();if(!j)return;const loText=limitDraft?.key===j.key?limitDraft.minimum:minimum.value,hiText=limitDraft?.key===j.key?limitDraft.maximum:maximum.value,lo=Number(loText),hi=Number(hiText);
+  if(!loText.trim()||!hiText.trim()||!Number.isFinite(lo)||!Number.isFinite(hi)||lo>hi||lo<j.pose.hardMin||hi>j.pose.hardMax){status('Choose finite, ordered limits inside '+j.pose.hardMin+' to '+j.pose.hardMax+' degrees.');sync();return;}
+  limitDraft={key:j.key,minimum:loText,maximum:hiText,submitted:true,lo,hi};
   stop(false);write(j.nodeId,{[j.pose.parameter+'Min']:lo,[j.pose.parameter+'Max']:hi,[j.pose.parameter]:THREE.MathUtils.clamp(j.pose.value,lo,hi)});
  }
+ for(const el of [minimum,maximum])el.addEventListener('input',()=>{const j=active();if(j)limitDraft={key:j.key,minimum:minimum.value,maximum:maximum.value,submitted:false};});
  play.addEventListener('click',()=>{
   if(animation){stop();return;}const j=active();if(!j)return;
   animation={graphId:graph().id,nodeId:j.nodeId,parameter:j.pose.parameter,value:j.pose.value,frame:0,lo:j.pose.minimum,hi:j.pose.maximum};play.textContent='Stop / restore';sync();
@@ -107,6 +110,8 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
   }
   if(animation&&animation.graphId!==g?.id)stop(false);
   const old=active();joints=next;
+  if(limitDraft&&!joints.some(j=>j.key===limitDraft.key))limitDraft=null;
+  if(limitDraft?.submitted&&joints.some(j=>j.key===limitDraft.key&&j.pose.minimum===limitDraft.lo&&j.pose.maximum===limitDraft.hi))limitDraft=null;
   if(!joints.some(j=>j.key===selected))selected=(joints.find(j=>j.nodeId===old?.nodeId&&j.id===old?.id)||joints[0])?.key||'';
   const sig=joints.map(j=>j.key).join('|');
   if(sig!==signature){
@@ -139,7 +144,7 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
  return {refresh,update,
   clear(){
    // Do not restore/commit a pose: either operation would rebuild the cleared model.
-   stop(false);dragging=false;down=null;joints=[];markers=[];signature='';selected='';
+   stop(false);limitDraft=null;dragging=false;down=null;joints=[];markers=[];signature='';selected='';
    select.replaceChildren();layer.replaceChildren();layer.hidden=true;dial.style.display='none';
    selectionLabel.textContent='';panel.hidden=true;sync();
   },
@@ -150,7 +155,7 @@ export function mountPosePreview({host,canvas,camera,graph,meshes,commit,status}
    if(selected!==joint.key)choose(joint.key);
    if(data.action==='live-angle'&&Number.isFinite(data.value))liveAngle(data.value);
    else if(data.action==='angle'&&Number.isFinite(data.value))setAngle(data.value);
-   else if(data.action==='limits'&&Number.isFinite(data.minimum)&&Number.isFinite(data.maximum)){minimum.value=data.minimum;maximum.value=data.maximum;setLimits();}
+   else if(data.action==='limits'&&Number.isFinite(data.minimum)&&Number.isFinite(data.maximum)){limitDraft={key:joint.key,minimum:String(data.minimum),maximum:String(data.maximum),submitted:false};minimum.value=data.minimum;maximum.value=data.maximum;setLimits();}
    else if(data.action==='play'){if(!animation)play.click();}
    else if(data.action==='stop')stop();
    else if(data.action==='keep')stop(false,true);
