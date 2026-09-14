@@ -12,7 +12,7 @@ function buildAssemblyNodeGraph(graph,previewOnly){
      preserveId:key=>!!BWS_ASSET_NODES[geometryNodeTypeForId(graph,key)],
      typeOf:key=>geometryNodeTypeForId(graph,key),fields:(kind,key)=>geometryNodeFields(graph,kind,key),
      build:scoped=>buildGeometryNodeTree({graphOverride:scoped,previewOnly:true,legacyInstancePass:true}),
-     spec:mesh=>({shape:'custom',geometry:geometryToData(mesh.geometry),name:mesh.name,position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z].map(THREE.MathUtils.radToDeg),scale:mesh.scale.toArray(),color:'#'+mesh.material.color.getHexString(),roughness:mesh.material.roughness??.8})
+     spec:mesh=>({shape:'custom',geometry:geometryToData(mesh.geometry),name:mesh.name,position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z].map(THREE.MathUtils.radToDeg),scale:mesh.scale.toArray(),color:'#'+mesh.material.color.getHexString(),roughness:mesh.material.roughness??.8,gameAsset:structuredClone(mesh.userData.gameAsset),textureUrl:mesh.userData.textureUrl,doubleSided:mesh.material.side===THREE.DoubleSide})
     });
     if(BWS_ASSET_NODES[type].attachment)throw Error('Connect this building detail to a compatible house source.');
     assetNodeBuild(type,source,{graph,nodeId:id,group,outputName:graph.name,attachments:[],emit:spec=>result.push(spec)});
@@ -1457,7 +1457,7 @@ function assetNodeBuild(type,source,{graph,nodeId,group,outputName,emit,attachme
   if(machinery)spec.gameAsset={...spec.gameAsset,machinery:{...machinery,nodeId,offset:[p.assetOffsetX,p.assetOffsetY,p.assetOffsetZ]}};
   emit(spec);
  }});
- const count=buildVehicleNode(type,p,{seed:graph.seed,emit:damage.emit});return count+damage.finish();
+ const count=buildVehicleNode(type,p,{seed:graph.seed,emit:damage.emit,assemblyId:String(nodeId)});return count+damage.finish();
  }
  if(BWS_DAMAGE_EFFECT_NODES[type])return bwsBuildDamageNode(type,p,{graph,nodeId,group,outputName,emit});
  if(BWS_ASSET_NODES[type]?.attachment)return 0;
@@ -2051,6 +2051,100 @@ function activeGeometryNodeGraph() {
 function serializeOptionalPluginProjectData() {
   return { "geometry-nodes": JSON.parse(JSON.stringify(geometryNodeProjectState)) };
 }
+function geometryNodeBakedPayload(graph){
+ const scoped=JSON.parse(JSON.stringify(graph)),active=[...geometryNodeActiveNodeIds(scoped)];
+ if(active.some(id=>geometryNodeTypeForId(scoped,id)==='houseBatch'))throw Error('Baked export does not support House Batch. Export an individual graph.');
+ const hasVehicle=active.some(id=>!!VEHICLE_NODES[geometryNodeTypeForId(scoped,id)]);
+ if(hasVehicle){
+  const safeAssembly=new Set(['placePart','interactionVolume','heavyCargoVolume','forkCargoVolume','previewPose','vehicleControlHook']);
+  for(const id of active){
+   const type=geometryNodeTypeForId(scoped,id);
+   if(type==='transform'||type==='smoothGeometry'||(ASSEMBLY_NODES[type]&&!safeAssembly.has(type)))throw Error('Vehicle export does not yet support '+type+'. Keep the driving rig untransformed and place static cargo onto it.');
+   if(type==='placePart'){
+    // Placement may move cargo, but must never move an authored driving rig.
+    const pending=scoped.connections.filter(c=>c.toNodeId===id&&c.toInputIndex===1).map(c=>c.fromNodeId),seen=new Set();
+    while(pending.length){
+     const source=pending.pop();if(seen.has(source))continue;seen.add(source);
+     if(VEHICLE_NODES[geometryNodeTypeForId(scoped,source)])throw Error('Place Part cannot export a vehicle as cargo yet. Connect the vehicle to Target and non-vehicle cargo to Part.');
+     pending.push(...scoped.connections.filter(c=>c.toNodeId===source).map(c=>c.fromNodeId));
+    }
+   }
+  }
+ }
+ const meshes=buildGeometryNodeTree({graphOverride:scoped,previewOnly:true})||[];
+ try{
+  if(!meshes.length)throw Error('Nothing connected to export. Connect a generator to Group Output.');
+  if(meshes.length>20000||meshes.reduce((n,m)=>n+(m.geometry.getAttribute('position')?.count||0),0)>2000000)throw Error('Baked export exceeds the portable mesh budget. Split this graph.');
+  const exportMeshes=meshes.filter(mesh=>!mesh.userData.gameAsset?.assembly?.debugOnly);
+  if(!exportMeshes.length)throw Error('Nothing except editor guides is connected to export.');
+  const parts=encodeParts(exportMeshes).map((part,index)=>{
+   const rig=part.gameAsset?.machinery,drive=rig?.driving;
+   const placement=part.gameAsset?.assembly?.placement;
+   return {...part,id:graph.id+':part:'+index,assemblyId:drive?.assemblyId||null,wheelGroupId:drive?.role==='wheel'?drive.groupId:null,
+    ...(rig?.forkMotion?{forkMotion:{...rig.forkMotion,...(rig.forkMotion.pistonBaseY!==undefined?{pistonBaseY:rig.forkMotion.pistonBaseY+(rig.offset?.[1]||0)}:{})}}:{}),
+    ...(placement?.anchor==='forks'?{cargo:{id:placement.loadId}}:{})};
+  });
+  return {version:1,units:'meters',coordinateSystem:{handedness:'right',forward:[-1,0,0],up:[0,1,0],rotationOrder:'XYZ',rotationUnits:'radians'},parts};
+ }finally{for(const mesh of meshes){mesh.geometry.dispose();for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material])material.dispose();}}
+}
+const GEOMETRY_NODE_CLUSTER_MAX_BYTES = 128000000;
+// Runtime-only allowlist. Editable graphs, joints/pose UI and duplicate generator
+// metadata belong in .bwnc, never in the Cinder Cairn delivery format.
+function geometryNodeCinderAssetPayload(graph){
+ const baked=geometryNodeBakedPayload(graph),textures=[],textureIds=new Map(),rigs=[],rigIds=new Map();
+ const fields=['version','enabled','assemblyId','steering','origin','groundY','wheelbase','trackGauge','maxSteer','maxSpeed','reverseSpeed','acceleration','braking','forward','up','forklift'];
+ const wheelFields=['groupId','pivot','rollAxis','steerAxis','radius','steer','side','axle'];
+ const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value?.[key]!==undefined).map(key=>[key,value[key]]));
+ const bounds=new THREE.Box3(),point=new THREE.Vector3();let numbers=0,textureBytes=0;
+ if(baked.parts.length>5000)throw Error('Cinder Cairn supports at most 5,000 mesh parts. Split this asset.');
+ const parts=baked.parts.map(part=>{
+  const geometry=pick(part.geometry,['positions','normals','uvs','colors','indices']);
+  numbers+=geometry.positions?.length||0;if(numbers>9000000)throw Error('Cinder Cairn geometry exceeds nine million position components.');
+  const transform=new THREE.Matrix4().compose(new THREE.Vector3(...part.position),new THREE.Quaternion().setFromEuler(new THREE.Euler(...part.rotation,'XYZ')),new THREE.Vector3(...part.scale));
+  for(let i=0;i<geometry.positions.length;i+=3){point.fromArray(geometry.positions,i).applyMatrix4(transform);if(!point.toArray().every(Number.isFinite))throw Error('Non-finite runtime geometry.');bounds.expandByPoint(point);}
+  let texture=null;
+  if(part.textureUrl){
+   if(typeof part.textureUrl!=='string'||part.textureUrl.length>16000000||!/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(part.textureUrl))throw Error('Unsupported runtime texture.');
+   if(!textureIds.has(part.textureUrl)){textureBytes+=part.textureUrl.length;if(textureBytes>64000000)throw Error('Runtime textures exceed 64 MB.');textureIds.set(part.textureUrl,textures.length);textures.push(part.textureUrl);}
+   texture=textureIds.get(part.textureUrl);
+  }
+  const out={geometry,position:part.position,rotation:part.rotation,scale:part.scale,color:part.color,roughness:part.roughness,doubleSided:part.doubleSided,texture,rig:null,
+   ...(part.forkMotion?{forkMotion:part.forkMotion}:{}),...(part.cargo?{cargo:part.cargo}:{})};
+  const machinery=part.gameAsset?.machinery,d=machinery?.driving;
+  if(d){
+   if(typeof d.assemblyId!=='string'||!d.assemblyId)throw Error('Runtime driving requires a stable assembly ID.');
+   const driving=pick(d,fields);
+   for(const key of ['driverSeat','entryAnchor','exitAnchor'])if(d[key])driving[key]=pick(d[key],['position','rotation','forward','up']);
+   const offset=machinery.offset,signature=JSON.stringify({driving,offset});
+   let index=rigIds.get(d.assemblyId);
+   if(index===undefined){if(rigs.length>=24)throw Error('Runtime asset exceeds 24 assemblies.');index=rigs.length;rigIds.set(d.assemblyId,index);rigs.push({driving,offset,wheels:[],signature,wheelIds:new Map()});}
+   const rig=rigs[index];if(rig.signature!==signature)throw Error('Conflicting runtime assembly controls or offsets.');
+   if(!['body','wheel','track'].includes(d.role))throw Error('Unsupported runtime driving role.');
+   out.rig=index;out.role=d.role;
+   if(d.role==='wheel'){
+    const wheel=pick(d,wheelFields);if(typeof wheel.groupId!=='string'||!wheel.groupId)throw Error('Runtime wheel is missing an authored group ID.');
+    let wi=rig.wheelIds.get(wheel.groupId);
+    if(wi===undefined){wi=rig.wheels.length;rig.wheelIds.set(wheel.groupId,wi);rig.wheels.push(wheel);}
+    else if(JSON.stringify(rig.wheels[wi])!==JSON.stringify(wheel))throw Error('Conflicting authored wheel group '+wheel.groupId+'.');
+    out.wheel=wi;
+   }
+  }
+  return out;
+ });
+ if(bounds.isEmpty())throw Error('No runtime geometry to export.');
+ return {kind:'boltworks-cinder-asset',version:1,name:String(graph.name||'Cinder asset').slice(0,160),units:'meters',coordinateSystem:baked.coordinateSystem,
+  collision:{type:'aabb',center:bounds.getCenter(new THREE.Vector3()).toArray(),size:bounds.getSize(new THREE.Vector3()).max(new THREE.Vector3(.1,.1,.1)).toArray()},
+  textures,rigs:rigs.map(({driving,offset,wheels})=>({driving,offset,wheels})),parts};
+}
+async function geometryNodeCinderAssetFile(graph){
+ if(typeof CompressionStream!=='function')throw Error('This browser does not support gzip export. Use a current browser; editable .bwnc remains available.');
+ const json=JSON.stringify(geometryNodeCinderAssetPayload(graph)),source=new Blob([json],{type:'application/json'});
+ if(source.size>GEOMETRY_NODE_CLUSTER_MAX_BYTES)throw Error('Runtime JSON exceeds the 128 MB decompressed limit. Split this asset.');
+ const compressed=await new Response(source.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+ if(compressed.size>GEOMETRY_NODE_CLUSTER_MAX_BYTES)throw Error('Compressed game asset exceeds 128 MB.');
+ return {name:geometryNodeClusterFileName(graph).replace(/\.bwnc$/i,'.bwcasset'),blob:new Blob([compressed],{type:'application/gzip'})};
+}
+let cinderAssetExportBusy=false;
 function geometryNodeClusterPayload(graph) {
   const cleanGraph = JSON.parse(JSON.stringify(graph));
   cleanGraph.generatedIds = [];
@@ -2060,7 +2154,8 @@ function geometryNodeClusterPayload(graph) {
     version: 1,
     name: graph.name,
     savedAt: new Date().toISOString(),
-    graph: cleanGraph
+    graph: cleanGraph,
+    baked: geometryNodeBakedPayload(cleanGraph)
   };
 }
 function geometryNodeClusterString(graph, pretty = false) {
@@ -2077,6 +2172,10 @@ function setGeometryNodeStatus(message) {
   if (detachedStatus) detachedStatus.textContent = message;
 }
 function importGeometryNodeClusterText(text, sourceLabel = "node string") {
+  if (typeof text !== 'string' || text.length > GEOMETRY_NODE_CLUSTER_MAX_BYTES || new Blob([text]).size > GEOMETRY_NODE_CLUSTER_MAX_BYTES) {
+    setGeometryNodeStatus('Geometry Nodes file exceeds 128 MB.');
+    return false;
+  }
   let payload;
   try {
     payload = JSON.parse(String(text || "").trim());
@@ -2133,9 +2232,13 @@ function pasteGeometryNodeClusterString(doc = document) {
   if (value == null) return false;
   return importGeometryNodeClusterText(value, "pasted node string");
 }
-function saveGeometryNodeClusterFile(){const graph=activeGeometryNodeGraph();if(graph){parent.postMessage({type:'bws-graph-file',name:geometryNodeClusterFileName(graph),text:geometryNodeClusterString(graph,true)},'*');setGeometryNodeStatus('Geometry Nodes file prepared.');}else setGeometryNodeStatus('Create or load Geometry Nodes before saving.');}
+function saveGeometryNodeClusterFile(){const graph=activeGeometryNodeGraph();if(graph){try{const text=geometryNodeClusterString(graph);if(text.length>GEOMETRY_NODE_CLUSTER_MAX_BYTES||new Blob([text]).size>GEOMETRY_NODE_CLUSTER_MAX_BYTES)throw Error('Geometry Nodes file exceeds 128 MB.');parent.postMessage({type:'bws-graph-file',name:geometryNodeClusterFileName(graph),text},'*');setGeometryNodeStatus('Geometry Nodes file prepared with editable graph and baked game geometry/rig.');}catch(error){setGeometryNodeStatus('Export failed: '+error.message);}}else setGeometryNodeStatus('Create or load Geometry Nodes before saving.');}
 async function loadGeometryNodeClusterFile(file) {
   if (!file) return false;
+  if (file.size > GEOMETRY_NODE_CLUSTER_MAX_BYTES) {
+    setGeometryNodeStatus('Geometry Nodes file exceeds 128 MB.');
+    return false;
+  }
   if (!String(file.name || "").toLowerCase().endsWith(".bwnc")) {
     setGeometryNodeStatus("Choose a .bwnc BoltWorks node-cluster file.");
     return false;
@@ -4306,11 +4409,30 @@ function updateAll(){
 }
 window.addEventListener('message',event=>{
  if(event.source!==parent)return;const data=event.data;
+ if(data?.type==='bws-graph-capabilities-request'){
+  parent.postMessage({type:'bws-graph-capabilities',requestId:data.requestId,strictRecipeImport:1,nodeTypes:GEOMETRY_NODE_TYPES},'*');return;
+ }
  if(data?.type==='bws-graph-clear-preview'){clearGeometryNodePreview();return;}
  if(data?.type==='bws-geometry-nodes-save'){saveGeometryNodeClusterFile();return;}
+ if(data?.type==='bws-cinder-asset-export-request'){
+  if(typeof data.requestId!=='string'||!data.requestId.length||data.requestId.length>160)return;
+  const error=message=>parent.postMessage({type:'bws-cinder-asset-export-error',requestId:data.requestId,message},'*');
+  if(cinderAssetExportBusy){error('A Cinder Cairn export is already running.');return;}
+  const graph=activeGeometryNodeGraph();if(!graph){error('Choose a graph to export.');return;}
+  cinderAssetExportBusy=true;setGeometryNodeStatus('Preparing a stripped Cinder Cairn game asset...');
+  geometryNodeCinderAssetFile(JSON.parse(JSON.stringify(graph))).then(file=>{parent.postMessage({type:'bws-cinder-asset-export-result',requestId:data.requestId,...file},'*');setGeometryNodeStatus('Cinder Cairn asset exported. Your editable graph is unchanged.');}).catch(e=>{error(e.message);setGeometryNodeStatus('Game export failed: '+e.message);}).finally(()=>{cinderAssetExportBusy=false;});return;
+ }
+ if(data?.type==='bws-cinder-asset-export-request'){
+  if(typeof data.requestId!=='string'||!data.requestId.length||data.requestId.length>160)return;
+  const error=message=>parent.postMessage({type:'bws-cinder-asset-export-error',requestId:data.requestId,message},'*');
+  if(cinderAssetExportBusy){error('A Cinder Cairn export is already running.');return;}
+  const graph=activeGeometryNodeGraph();if(!graph){error('Choose a graph to export.');return;}
+  cinderAssetExportBusy=true;setGeometryNodeStatus('Preparing a stripped Cinder Cairn game asset...');
+  geometryNodeCinderAssetFile(JSON.parse(JSON.stringify(graph))).then(file=>{parent.postMessage({type:'bws-cinder-asset-export-result',requestId:data.requestId,...file},'*');setGeometryNodeStatus('Cinder Cairn asset exported. Your editable graph is unchanged.');}).catch(e=>{error(e.message);setGeometryNodeStatus('Game export failed: '+e.message);}).finally(()=>{cinderAssetExportBusy=false;});return;
+ }
  if(data?.type==='bws-graph-pose-command'){posePreview?.command(data);return;}
  if(data?.type==='bws-geometry-nodes-load'){
-  if(typeof data.text!=='string'||data.text.length>8000000){setGeometryNodeStatus('Geometry Nodes file is too large.');return;}
+  if(typeof data.text!=='string'||data.text.length>GEOMETRY_NODE_CLUSTER_MAX_BYTES){setGeometryNodeStatus('Geometry Nodes file exceeds 128 MB.');return;}
   try{importGeometryNodeClusterText(data.text,String(data.name||'Geometry Nodes.bwnc'));}catch(error){setGeometryNodeStatus('Could not load Geometry Nodes: '+error.message);}
   return;
  }
@@ -4323,7 +4445,18 @@ window.addEventListener('message',event=>{
  try{
   if(data?.type==='bws-graph-snapshot'){geometryNodeProjectState=sanitizeGeometryNodeProjectState(data.state,{allowEmpty:true});textureLibrary.clear();for(const texture of data.textures||[])textureLibrary.set(texture.name,texture);renderGeometryNodeEditor();setGeometryNodeStatus('Graph library copied. Changes stay here until you choose Save graphs to BWS.');}
   if(data?.type==='bws-graph-preview-request'){
-   const graph=sanitizeGeometryNodeGraph(data.graph),result=buildGeometryNodeTree({graphOverride:graph,previewOnly:true})||[];
+   if(data.strict===true){
+    const raw=data.graph;
+    if(!raw||!Array.isArray(raw.nodeOrder)||!raw.nodeOrder.length||!Array.isArray(raw.connections)||!Array.isArray(raw.smoothNodes||[]))throw Error('Invalid node recipe structure.');
+    const unsupported=raw.nodeOrder.filter(id=>typeof id!=='string'||!GEOMETRY_NODE_DEFINITIONS[id.split('::')[0]]);
+    if(unsupported.length)throw Error('Unsupported node types in installed Geometry Nodes: '+unsupported.map(String).join(', ')+'. Update Geometry Nodes before importing this recipe.');
+   }
+   const graph=sanitizeGeometryNodeGraph(data.graph);
+   if(data.strict===true){
+    const raw=data.graph,keys=links=>links.map(c=>JSON.stringify([c.fromNodeId,c.toNodeId,c.toInputIndex])).sort();
+    if(JSON.stringify(graph.nodeOrder)!==JSON.stringify(raw.nodeOrder)||JSON.stringify(graph.smoothNodes.map(n=>n.id).sort())!==JSON.stringify((raw.smoothNodes||[]).map(n=>n.id).sort())||JSON.stringify(keys(graph.connections))!==JSON.stringify(keys(raw.connections)))throw Error('Recipe nodes or connections could not be preserved. Check node types, input sockets and output connections in Geometry Nodes.');
+   }
+   const result=buildGeometryNodeTree({graphOverride:graph,previewOnly:true})||[];
    try{parent.postMessage({type:'bws-graph-preview-result',requestId:data.requestId,parts:encodeParts(result)},'*');}finally{for(const mesh of result){mesh.geometry.dispose();mesh.material.dispose();}}
   }
  }catch(error){if(data?.requestId)parent.postMessage({type:'bws-graph-preview-error',requestId:data.requestId,message:error.message},'*');else setGeometryNodeStatus(error.message);}

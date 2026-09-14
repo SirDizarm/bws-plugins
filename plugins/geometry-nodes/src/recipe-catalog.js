@@ -54,8 +54,37 @@ const entries=[
  {id:45,name:'Raised Tipping Body',description:'Separate tipping bed with a following lift ram and adjustable rear gate. Add your own chassis.',type:'vehicleTipper',params:{machineTipAngle:35,machineTailgateAngle:35},theme:{themeShape:'square',themeCondition:'worn',themePaint:'#826b52'}},
  {id:46,name:'Industrial Sideboard Trailer',description:'Three rear axles, cargo deck, sideboards, landing legs and a coupling.',type:'vehicleTrailer',params:{machineTrailerLength:8,machineTrailerAxles:3,machineTrailerSides:.7},theme:{themeShape:'square',themeCondition:'worn',themePaint:'#7d8a80'}},
  {id:47,name:'Open Cargo Trailer',description:'Long flat trailer deck without sideboards for custom cargo placement.',type:'vehicleTrailer',params:{machineTrailerLength:9,machineTrailerAxles:3,machineTrailerSides:0},theme:{themeShape:'classic',themeCondition:'rusty',themeWear:.3,themePaint:'#708273'}},
- {id:48,name:'Industrial Cab-over',description:'Standalone flat-front industrial cab with opening doors; ready to combine with chassis parts.',type:'vehicleCabOver',params:{machineDoorAngle:25},theme:{themeShape:'square',themeCondition:'worn',themePaint:'#8c7960'}}
+ {id:48,name:'Industrial Cab-over',description:'Standalone flat-front industrial cab with opening doors; ready to combine with chassis parts.',type:'vehicleCabOver',params:{machineDoorAngle:25},theme:{themeShape:'square',themeCondition:'worn',themePaint:'#8c7960'}},
+ {id:65,name:'Container Semi - Closed Cargo',description:'Modern cab-over tractor and triple-axle trailer carrying a corrugated container with closed rear doors.',type:'vehicleContainerTruck',params:{machineTrailerLength:9,machineTrailerWidth:2.5,machineTrailerAxles:3,machineContainerHeight:2.6,machineContainerDoorAngle:0,machineCabWidth:2.3,machineCabHeight:2.7},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#54778a'}},
+ {id:66,name:'Container Semi - Open Rear',description:'Modern cab-over container semi with a triple-axle trailer and rear container doors hinged open to 110 degrees.',type:'vehicleContainerTruck',params:{machineTrailerLength:9,machineTrailerWidth:2.5,machineTrailerAxles:3,machineContainerHeight:2.6,machineContainerDoorAngle:110,machineCabWidth:2.3,machineCabHeight:2.7},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#54778a'}},
+ {id:67,name:'Knuckleboom Cargo Truck',description:'Cargo truck with a folding knuckleboom behind the cab, hanging hook and deployed outriggers. Editable static crane pose.',type:'vehicleKnuckleTruck',params:{machineYaw:0,machineBoomLength:3,machineBoomAngle:45,machineStickLength:2,machineKnuckleAngle:-145,machineCable:1,machineOutriggerSpan:4.5},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#a86538'}},
+ {id:68,name:'Folding Pedestal Crane',description:'Standalone pedestal crane with a folding outer arm, hanging hook and adjustable stabilizer span.',type:'vehiclePedestalCrane',params:{machineYaw:0,machineBoomLength:3,machineBoomAngle:45,machineStickLength:2,machineKnuckleAngle:-145,machineCable:1,machineOutriggerSpan:4.5},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#b39746'}},
+ {id:69,name:'Mobile Telescopic Crane',description:'Wheeled mobile crane with an elevated extending boom, hanging hook and deployed outriggers.',type:'vehicleMobileCrane',params:{machineYaw:0,machineBoomLength:5,machineBoomAngle:45,machineExtension:2,machineCable:1.4,machineOutriggerSpan:5},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#b59a45'}},
+ {id:70,name:'Crawler Telescopic Crane',description:'Tracked crane with a raised telescopic boom and hanging hook on a broad crawler undercarriage.',type:'vehicleCrawlerCrane',params:{machineYaw:0,machineBoomLength:5,machineBoomAngle:45,machineExtension:2,machineCable:1.4,machineTrackLength:5,machineTrackGauge:2.5},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#9c6545'}},
+ {id:71,name:'Container Reach Stacker',description:'Wheeled container handler with an elevated telescopic boom and six-metre spreader. Adjust extension, elevation and spreader yaw.',type:'vehicleReachStacker',params:{machineYaw:0,machineBoomLength:5,machineBoomAngle:45,machineExtension:2,machineCable:1.4,machineSpreaderLength:6,machineToolAngle:0},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#a46e38'}},
+ {id:72,name:'Lattice Tower Crane',description:'Twelve-metre lattice tower with a horizontal jib, counterjib, counterweight, movable trolley and hanging cable.',type:'vehicleTowerCrane',params:{machineTowerHeight:12,machineJibLength:12,machineTrolleyPosition:.65,machineCable:4,machineYaw:0},theme:{themeShape:'square',themeCondition:'clean',themePaint:'#b69a48'}}
 ];
+
+// Nature presets use registered mesh generators, not renamed vehicle recipes.
+entries.push(
+ {id:73,name:'Broad Oak',nature:'trees',type:'detailedTree',description:'Wide mature oak with a thick branching trunk and a full, spreading crown.',params:{treeSpecies:'oak',treeHeight:6.5,treeCrownWidth:6,treeFullness:1.5,treeBarkColor:'#66503b',treeLeafColor:'#496b35'}},
+ {id:74,name:'Tiered Pine',nature:'trees',type:'detailedTree',description:'Tall evergreen with seven tapered foliage tiers and a narrow conical silhouette.',params:{treeSpecies:'pine',treeHeight:8,treeCrownWidth:3.6,treeFullness:1,treeBarkColor:'#725840',treeLeafColor:'#405f39'}},
+ {id:75,name:'Silver Birch',nature:'trees',type:'detailedTree',description:'Slender pale trunk with dark bark scars and an upright, airy broadleaf crown.',params:{treeSpecies:'birch',treeHeight:7,treeCrownWidth:3.1,treeFullness:.7,treeLeafColor:'#718a46'}},
+ {id:76,name:'Bare Dead Tree',nature:'trees',type:'detailedTree',description:'Leafless branching skeleton with exposed forks and fine terminal twigs.',params:{treeSpecies:'deadTree',treeHeight:5.8,treeCrownWidth:4.4,treeBarkColor:'#766b5c'}},
+ {id:77,name:'Orchard-Style Broadleaf',nature:'trees',type:'detailedTree',description:'Low, broad oak-derived crown for orchard layouts. A shape preset, without fruit or species-specific pruning.',params:{treeSpecies:'oak',treeHeight:2.8,treeCrownWidth:3.5,treeFullness:1.2,treeBarkColor:'#715640',treeLeafColor:'#638044'}},
+ {id:78,name:'Young Broadleaf Sapling',nature:'trees',type:'detailedTree',description:'Small oak-derived tree with a thin trunk, narrow crown and sparse foliage clusters.',params:{treeSpecies:'oak',treeHeight:1.6,treeCrownWidth:.85,treeFullness:.4,treeBarkColor:'#807052',treeLeafColor:'#71924b'}},
+ {id:79,name:'Rounded Boulder',nature:'rocks',type:'detailedRock',description:'Broad, low-weathering closed boulder with softly varying faceted surfaces.',params:{stoneStyle:'boulder',stoneSize:1.6,stoneWeathering:.15,stoneColor:'#85867e'}},
+ {id:80,name:'Angular Granite-Style Rock',nature:'rocks',type:'detailedRock',description:'Compact, irregular crag with pronounced angular faces and cool grey stone tones.',params:{stoneStyle:'crag',stoneSize:1.3,stoneWeathering:1,stoneColor:'#777e84'}},
+ {id:81,name:'Flat Slate Slab',nature:'rocks',type:'detailedRock',description:'Thin, broad slate-style hull with a low profile. No simulated moss coating.',params:{stoneStyle:'slate',stoneSize:2.1,stoneWeathering:.55,stoneColor:'#626f70'}},
+ {id:82,name:'Tall Crag Outcrop',nature:'rocks',type:'detailedRock',description:'Large upright weathered outcrop, substantially taller than the boulder and slab presets.',params:{stoneStyle:'crag',stoneSize:3.6,stoneWeathering:.75,stoneColor:'#837c6c'}},
+ {id:83,name:'Scattered Fieldstones',nature:'rocks',type:'detailedRock',description:'Six individually editable flattened stones with different sizes, weathering and spaced positions.',params:{stoneStyle:'fieldstone',stoneSize:.8,stoneWeathering:.65,stoneColor:'#7b8270'},extras:[
+  {type:'detailedRock',params:{stoneStyle:'fieldstone',stoneSize:.55,stoneWeathering:.8,stoneColor:'#828675',assetOffsetX:1.8,assetOffsetZ:.3}},
+  {type:'detailedRock',params:{stoneStyle:'fieldstone',stoneSize:1.1,stoneWeathering:.45,stoneColor:'#707b6b',assetOffsetX:-2.2,assetOffsetZ:.6}},
+  {type:'detailedRock',params:{stoneStyle:'fieldstone',stoneSize:.65,stoneWeathering:.95,stoneColor:'#8d8c7c',assetOffsetX:.4,assetOffsetZ:2}},
+  {type:'detailedRock',params:{stoneStyle:'fieldstone',stoneSize:.45,stoneWeathering:.6,stoneColor:'#697667',assetOffsetX:1.8,assetOffsetZ:-1.5}},
+  {type:'detailedRock',params:{stoneStyle:'fieldstone',stoneSize:.9,stoneWeathering:.7,stoneColor:'#78806f',assetOffsetX:-1.5,assetOffsetZ:-1.8}}
+ ]}
+);
 
 export function mountRecipeCatalog({host,createGraph,buildPreview,loadRecipe}){
  // Explicit source/id pairs keep published recipe numbers stable forever.
@@ -69,14 +98,14 @@ export function mountRecipeCatalog({host,createGraph,buildPreview,loadRecipe}){
  style.textContent=`.gn-catalog{margin:16px 0;border:1px solid #476358;border-radius:8px;background:linear-gradient(130deg,#1c302d,#142125);padding:14px}.gn-catalog summary{cursor:pointer;font-size:18px;color:#a8d4bd}.gn-catalog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:14px;margin-top:14px}.gn-catalog article{background:#101e20;border:1px solid #385149;border-radius:7px;overflow:hidden}.gn-catalog img{display:block;width:100%;aspect-ratio:360/240;object-fit:contain;background:#142125}.gn-catalog h3,.gn-catalog p{margin:12px}.gn-catalog article button{margin:0 12px 14px}.gn-catalog p{line-height:1.5}.gn-catalog-status{color:#adc3b8}`;
  document.head.append(style);
  const panel=document.createElement('details');panel.className='gn-catalog';
- const title=document.createElement('summary');title.textContent='Recipe Catalog / Industrial collection';panel.append(title);
+ const title=document.createElement('summary');title.textContent='Recipe Catalog / Vehicles, Buildings and Nature';panel.append(title);
  const intro=document.createElement('p');intro.textContent='Green previews show the real generated shapes. Recipe numbers are permanent: quote the number when reporting an issue. Use a recipe to add editable nodes without replacing existing recipes or workspace models. GN 0.8.1 or newer. Save Geometry Nodes to keep your changes.';panel.append(intro);
  const status=document.createElement('p');status.className='gn-catalog-status';status.setAttribute('role','status');panel.append(status);
  const grid=document.createElement('div');grid.className='gn-catalog-grid';panel.append(grid);host.before(panel);
  const navigation=document.createElement('div');navigation.setAttribute('role','group');navigation.setAttribute('aria-label','Recipe categories');navigation.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:12px';panel.insertBefore(navigation,grid);
  const hiddenStyle=document.createElement('style');hiddenStyle.textContent='.gn-catalog article[hidden]{display:none}.gn-catalog [aria-pressed="true"]{background:#347763;color:#fff;border-color:#8dc6ad}';document.head.append(hiddenStyle);
  let category='all';const categoryButtons=[];
- for(const [value,label] of [['all','All recipes'],['vehicles','Vehicles'],['buildings','Buildings']]){
+ for(const [value,label] of [['all','All recipes'],['vehicles','Vehicles'],['buildings','Buildings'],['trees','Trees'],['rocks','Rocks']]){
   const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('aria-pressed',String(value===category));
   button.addEventListener('click',()=>{category=value;for(const [key,b] of categoryButtons)b.setAttribute('aria-pressed',String(key===value));for(const card of grid.children)card.hidden=value!=='all'&&card.dataset.category!==value;});
   categoryButtons.push([value,button]);navigation.append(button);
@@ -85,9 +114,10 @@ export function mountRecipeCatalog({host,createGraph,buildPreview,loadRecipe}){
  const recipes=catalogEntries.map(entry=>{
   const recipeName='#'+entry.id+' '+entry.name;
   const graph=createGraph(recipeName);
+  if(entry.nature)graph.seed=entry.id*7919;
   const storeys=entry.houseParams?.buildingStoreys||1;
   const windows=Array.from({length:storeys},(_,i)=>i?'window::'+(i+1):'window');
-  graph.nodeOrder=entry.house?['seed','houseLayout','floor',...windows,'door','diagonalBracing','foundation','facadeDetails',...(entry.stone?['medievalStyle']:[]),'roof','chimney','output']:entry.ruin?['seed','ruinedHouse','output']:['seed','vehicleTheme',entry.type,...(entry.load?['forkCargoVolume','primitive','placePart']:[]),'output'];
+  graph.nodeOrder=entry.nature?['seed',entry.type,'output']:entry.house?['seed','houseLayout','floor',...windows,'door','diagonalBracing','foundation','facadeDetails',...(entry.stone?['medievalStyle']:[]),'roof','chimney','output']:entry.ruin?['seed','ruinedHouse','output']:['seed','vehicleTheme',entry.type,...(entry.load?['forkCargoVolume','primitive','placePart']:[]),'output'];
   graph.connections=[];graph.nodeParams={};graph.nodePositions={};graph.smoothNodes=[];graph.generatedIds=[];graph.centerOutput=false;
   const link=(from,to,index=0)=>graph.connections.push({id:crypto.randomUUID(),fromNodeId:from,toNodeId:to,toInputIndex:index});
   const extras=(entry.extras||[]).map((extra,i)=>({...extra,id:extra.type+'::'+(i+2)}));
@@ -107,6 +137,10 @@ export function mountRecipeCatalog({host,createGraph,buildPreview,loadRecipe}){
    if(entry.stone)graph.nodeParams.medievalStyle={...graph.params,medievalStoneGround:true,medievalGableTimber:true,medievalLeadedGlass:true,medievalStoneCourses:10,...entry.stoneParams};
   }
   else if(entry.ruin){graph.nodeParams.ruinedHouse={...graph.params,...entry.params};link('seed','ruinedHouse');link('ruinedHouse','output');}
+  else if(entry.nature){
+   graph.nodeParams[entry.type]={...graph.params,...entry.params};link('seed',entry.type);link(entry.type,'output');
+   extras.forEach((extra,i)=>{graph.nodeParams[extra.id]={...graph.params,...extra.params};link('seed',extra.id);link(extra.id,'output',i+1);});
+  }
   else{
    graph.nodeParams[entry.type]={...graph.params,...entry.params};graph.nodeParams.vehicleTheme={...graph.params,...entry.theme};
    link('seed',entry.type);link('vehicleTheme',entry.type,2);
@@ -125,7 +159,7 @@ export function mountRecipeCatalog({host,createGraph,buildPreview,loadRecipe}){
   }
   graph.nodeOrder.forEach((id,i)=>graph.nodePositions[id]=[40+i*230,id==='vehicleTheme'?360:40]);
   const card=document.createElement('article'),img=document.createElement('img');img.alt=recipeName+' generated mesh preview';
-  card.dataset.category=entry.house||entry.ruin?'buildings':'vehicles';
+  card.dataset.category=entry.nature||(entry.house||entry.ruin?'buildings':'vehicles');
   const h=document.createElement('h3');h.textContent=recipeName;
   const p=document.createElement('p');p.textContent=entry.description;
   const button=document.createElement('button');button.type='button';button.textContent='Use these Geometry Nodes';

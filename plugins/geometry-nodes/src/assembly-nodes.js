@@ -78,7 +78,9 @@ export function evaluateAssembly(graph,{typeOf,params,source,fromData,toData,smo
     group=/tyre|wheel bolt|rim|hub|fender/.test(name)?'wheels':/bed|deck|cargo|tailgate|headboard|log |logging|rear lamp|tail lamp|rear bar|stake bolt/.test(name)?'cargo':/engine|sump|cylinder head|valve|exhaust|intake|radiator core|radiator hose|fan|pulley|filter/.test(name)?'engine':/chassis|crossmember|axle|differential|spring|shaft|fuel tank/.test(name)?'chassis':'cab';
    }
    if(type==='vehicleForklift'&&/fork tine /.test(name))group='forks';
-   if(part.gameAsset?.machinery?.role)group=part.gameAsset.machinery.role;
+   // Generic driving body metadata must not replace specific assembly groups (e.g. forks).
+   const machineryRole=part.gameAsset?.machinery?.role;
+   if(groups.includes(machineryRole))group=machineryRole;
    part.gameAsset={...part.gameAsset,assembly:{version:1,id:id+':'+name+':'+serial,sourceNode:id,group}};return part;
   });
  }

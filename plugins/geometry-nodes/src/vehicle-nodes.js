@@ -2,18 +2,19 @@ import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {VEHICLE_THEME_FIELDS} from './vehicle-theme.js';
-import {MACHINERY_NODES,buildMachineryNode} from './machinery-nodes.js';
+import {MACHINERY_NODES,buildMachineryNode,DRIVE_FIELDS,createDriveMetadata,drivePartMetadata,configureDriverAnchors} from './machinery-nodes.js';
 import {VEHICLE_DAMAGE_FIELDS} from './vehicle-damage.js';
 
 const fields={
+ ...DRIVE_FIELDS,
  ...VEHICLE_THEME_FIELDS,
  ...VEHICLE_DAMAGE_FIELDS,
  vehicleThemeOverride:['Override connected theme',false],
  vehicleBody:['Cargo body','wood',['wood','flatbed','box','logs']],
  vehicleRearAxles:['Rear axle count',1,1,3,1],vehicleCargoHeight:['Cargo height',2,.8,3,.1],
  vehicleLogRows:['Log layers',4,1,6,1],vehicleStacks:['Exhaust stacks',false],
- vehicleForkLift:['Fork height',.12,.12,2.2,.05],vehicleForkSpread:['Fork spacing',.65,.35,1.1,.05],
- vehicleForkLength:['Fork length',1.3,.8,2,.1],
+ vehicleForkLift:['Raise / lower forks (m)',.12,.12,2.2,.05],vehicleForkSpread:['Fork spacing: wider / narrower (m)',.65,.35,1.1,.05],
+ vehicleForkLength:['Fork length / reach (m)',1.3,.8,2,.1],
  vehicleWheelbase:['Wheelbase',3.4,2.6,4.8,.1],vehicleWidth:['Body width',2.3,1.8,2.8,.05],
  vehicleCabHeight:['Cab height',2.55,2.2,3.1,.05],vehicleBedLength:['Bed length',3.1,2.2,4.5,.1],
  vehicleBedSides:['Bed side height',.65,.2,1.2,.05],vehicleWheelRadius:['Tyre radius',.5,.38,.62,.02],
@@ -32,8 +33,8 @@ export const VEHICLE_NODES=Object.freeze({...MACHINERY_NODES,...Object.fromEntri
 )}]))});
 
 // Metres, Y up, forward -X. All component nodes use the same assembly origin.
-export function buildVehicleNode(type,p,{seed=1,emit}){
- if(MACHINERY_NODES[type])return buildMachineryNode(type,p,{seed,emit});
+export function buildVehicleNode(type,p,{seed=1,emit,assemblyId}){
+ if(MACHINERY_NODES[type])return buildMachineryNode(type,p,{seed,emit,assemblyId});
  const forklift=type==='vehicleForklift';
  const wb=forklift?1.65:p.vehicleWheelbase,w=forklift?1.45:p.vehicleWidth,r=forklift?.36:p.vehicleWheelRadius,tw=p.vehicleTyreWidth;
  const recessedBed=['wood','flatbed'].includes(p.vehicleBody)&&!['vehicleBoxBody','vehicleLogRack'].includes(type);
@@ -44,7 +45,12 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
  const rearCenter=forklift?rear:Math.min(rear,cabBack+.08+bedL-.25-r-(axleCount-1)*spacing/2);
  const axles=[['front',front],...Array.from({length:axleCount},(_,i)=>['rear '+(i+1),rearCenter+(i-(axleCount-1)/2)*spacing])];
  const wooden=p.vehicleBody==='wood'&&!['vehicleBoxBody','vehicleLogRack'].includes(type);
- let count=0,state=(seed>>>0)||1;
+ const drive=createDriveMetadata(type,p,assemblyId,(forklift||type==='vehicleCargoTruck')?{mode:'wheeled',wheelbase:rearCenter-front,steeringAxle:forklift?'rear':'front',trackGauge:track*2}:{});
+ const driverSide=p.vehicleDrivingSide==='right'?-1:1;
+ if(forklift)configureDriverAnchors(drive,p,{seat:[.18,1.135,0],entry:[-.13,0,1.05]});
+ else if(type==='vehicleCargoTruck')configureDriverAnchors(drive,p,{seat:[cabBack-.48,r+.635,p.vehicleSeats==='bench'?0:driverSide*Math.min(.46,w*.22)],entry:[cabBack-.7,0,driverSide*(w/2+.55)]});
+ if(forklift)drive.forklift={version:1,height:p.vehicleForkLift,spread:p.vehicleForkSpread,minHeight:.12,maxHeight:2.2,minSpread:.35,maxSpread:1.1,liftSpeed:.65,spreadSpeed:.35,tineLength:p.vehicleForkLength,tineWidth:.12,support:[front-.74-p.vehicleForkLength/2,p.vehicleForkLift+.0325,0]};
+ let count=0,state=(seed>>>0)||1,activeWheel=null,activeFork=null;
  const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
  const tint=(c,a=.08)=>'#'+new THREE.Color(c).multiplyScalar(1+(random()-.5)*a).getHexString();
  function add(g,name,pos,color,roughness=.8){
@@ -62,7 +68,7 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
    else c.multiplyScalar(1-wear*(.08+random()*.16));
    color='#'+c.getHexString();roughness=Math.max(roughness,.9);
   }
-  emit(g,name,pos,color,roughness);count++;
+  emit(g,name,pos,color,roughness,{version:1,role:activeWheel?'wheels':'body',joints:[],poseOnly:true,...drivePartMetadata(drive,activeWheel),...(activeFork?{forkMotion:{...activeFork}}:{})});count++;
  }
  function box(name,pos,size,color,round=0){
   const rounding=p.themeShape==='square'||p.themeShape==='futuristic'?0:p.themeShape==='round'?Math.max(round,Math.min(...size)*.22):round;
@@ -390,20 +396,32 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
   const x=front-.50,lift=p.vehicleForkLift;
   for(const side of [-1,1]){
    box('mast rail '+side,[x,1.80,side*.46],[.14,3.20,.12],metal,.012);
+   activeFork={lift:1,spread:0};
    box('carriage upright '+side,[x-.15,lift+.48,side*.43],[.10,.96,.09],metal,.01);
+   activeFork={lift:1,spread:side/2};
    box('fork heel '+side,[x-.24,lift+.36,side*p.vehicleForkSpread/2],[.12,.72,.12],metal,.025);
    box('fork tine '+side,[x-.24-p.vehicleForkLength/2,lift,side*p.vehicleForkSpread/2],[p.vehicleForkLength,.065,.12],metal,.025);
+   activeFork=null;
    beam('mast mount '+side,[front,.4,side*.46],[x,.4,side*.46],.06,metal);
    beam('lift chain '+side,[x-.02,.28,side*.24],[x-.02,3.27,side*.24],.013,'#757970');
   }
   for(const y of [.24,3.36])box('mast cross rail '+y,[x,y,0],[.15,.12,1.04],metal);
+  activeFork={lift:1,spread:0};
   for(const y of [lift+.15,lift+.80])box('carriage cross rail '+y,[x-.16,y,0],[.10,.10,1.02],metal);
-  beam('hydraulic barrel',[x+.10,.30,0],[x+.10,1.15,0],.07,metal);
-  beam('hydraulic piston',[x+.10,1.15,0],[x+.10,1.35+lift*.55,0],.035,'#bbc3c4');
+  activeFork=null;
+  // Top-mounted cylinder: the downward rod retracts as the carriage rises.
+  const cylinderMouth=2.65,rodLength=.20+(2.2-lift)*.55;
+  beam('top-mounted hydraulic barrel',[x+.10,cylinderMouth,0],[x+.10,3.30,0],.07,metal);
+  activeFork={lift:0,spread:0,pistonBaseY:cylinderMouth,pistonLength:rodLength,pistonRatio:-.55};
+  beam('downward retracting hydraulic piston',[x+.10,cylinderMouth,0],[x+.10,cylinderMouth-rodLength,0],.035,'#bbc3c4');
+  activeFork=null;
  }
  function wheels(){
   for(const [axle,x]of axles)for(const side of [-1,1]){
    const label=axle+' '+(side>0?'right':'left'),z=side*track;
+   const isFront=axle==='front';
+   activeWheel={id:'wheel-'+drive.wheelGroups.length,pivot:[x,r,z],rollAxis:[0,0,1],steerAxis:[0,1,0],radius:r,axle:isFront?'front':'rear',side:side>0?'left':'right',steer:forklift?!isFront:isFront,drive:forklift?isFront:!isFront};
+   drive.wheelGroups.push(activeWheel);
    const profile=[[r*.60,-tw*.5],[r*.82,-tw*.57],[r*.96,-tw*.42],[r,0],[r*.96,tw*.42],[r*.82,tw*.57],[r*.60,tw*.5],[r*.60,-tw*.5]].map(([a,b])=>new THREE.Vector2(a,b));
    const tyre=new THREE.LatheGeometry(profile,36);tyre.rotateX(Math.PI/2);
    const parts=[tyre];
@@ -430,5 +448,6 @@ export function buildVehicleNode(type,p,{seed=1,emit}){
  if(type==='vehicleExhaust'||(type==='vehicleCargoTruck'&&p.vehicleStacks))exhaust();
  if(forklift){forkliftBody();wheels();}
  if(type==='vehicleCargoTruck'||type==='vehicleWheels')wheels();
+ activeWheel=null;
  return count;
 }
