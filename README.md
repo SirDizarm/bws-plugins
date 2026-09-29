@@ -10,6 +10,7 @@ Optional plugins for BoltWorks Studio. Install only what you want; plugins are n
 
 | Plugin | Status | Package |
 | --- | --- | --- |
+| [BWS AI Modeling](plugins/bws-ai-modeling/index.html) | Optional BoltWorksConnect AI tool catalog, version 1.0.3; requires BWS 50.0.57 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/bws-ai-modeling/plugin.bwsplugin) |
 | [Scene Rendering](plugins/scene-rendering/index.html) | Lighting and reversible rundown preview, version 1.2.0 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/scene-rendering/plugin.bwsplugin) |
 | [Image to Mesh](plugins/image-to-mesh/index.html) | Reconstruction development preview, version 1.1.0; requires BWS 50.0.13 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/image-to-mesh/plugin.bwsplugin) |
 | [Roblox Exporter](plugins/roblox-exporter/index.html) | Exporter preview, version 1.1.0 | [Download / install URL](https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/roblox-exporter/plugin.bwsplugin) |
